@@ -5,36 +5,40 @@ import asyncpg
 from dotenv import load_dotenv
 from typing import List, Optional
 from pydantic import BaseModel
+import re
 
 load_dotenv()
 
-# ---------- Ollama AI Settings ----------
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
-# ---------- Database URL ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set in .env")
 
-# ---------- Pydantic Models ----------
+# Query cache: stores parsed queries to avoid repeated AI calls
+QUERY_CACHE = {}
+
+
 class UserRecord(BaseModel):
     id: int
     full_name: str
     username: str
     gender: str
 
+
 class UserQueryFilters(BaseModel):
-    gender: Optional[str] = None  # Can be: Male, Female, or Other
+    gender: Optional[str] = None
     name_substr: Optional[str] = None
+    starts_with_mode: bool = False
+
 
 class FilteredResult(BaseModel):
     results: List[UserRecord]
     ranked_ids: Optional[List[int]] = None
 
 
-# ---------- AI Helper ----------
 async def chat_completion(user_input: str, system_prompt: str = None) -> str:
     if not OLLAMA_BASE_URL or not OLLAMA_API_KEY:
         raise RuntimeError("OLLAMA_BASE_URL and OLLAMA_API_KEY must be set")
@@ -53,11 +57,11 @@ async def chat_completion(user_input: str, system_prompt: str = None) -> str:
     payload = {
         "model": OLLAMA_MODEL,
         "messages": messages,
-        "temperature": 0.0,  # Qwen3 works best at 0 for structured outputs
+        "temperature": 0.0,
         "top_p": 0.95,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:  # Increased to 60s for ranking
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -65,13 +69,132 @@ async def chat_completion(user_input: str, system_prompt: str = None) -> str:
     return data["choices"][0]["message"]["content"]
 
 
-# ---------- AI-driven Query Parsing ----------
-async def parse_query_ai(user_query: str) -> UserQueryFilters:
+def normalize_query(query: str) -> str:
+    """
+    Normalize query for fuzzy cache matching.
+    Makes similar queries map to the same cache key.
+    """
+    q = query.lower().strip()
+
+    # Remove extra spaces
+    q = ' '.join(q.split())
+
+    # Normalize common query starters to standard form
+    starters = ['show me', 'find me', 'get me', 'list me', 'give me', 'show', 'find', 'get', 'list', 'search']
+    for starter in starters:
+        if q.startswith(starter + ' '):
+            q = 'show ' + q[len(starter):].strip()
+            break
+
+    # Normalize common variations
+    replacements = {
+        'females': 'female',
+        'males': 'male',
+        'users': 'user',
+        'people': 'user',
+        'persons': 'user',
+        'all the': 'all',
+        'with the name': 'named',
+        'with the': 'with',
+        'in the': 'in',
+        'whose name ': 'whose names ',
+        'called': 'named',
+    }
+
+    for old, new in replacements.items():
+        q = q.replace(old, new)
+
+    # Remove filler words
+    filler_words = ['please', 'could you', 'can you', 'would you', 'will you', 'the', 'a', 'an', 'my']
+    words = q.split()
+    words = [w for w in words if w not in filler_words]
+
+    result = ' '.join(words)
+    print(f"[NORMALIZE] '{query}' → '{result}'")
+    return result
+
+
+def simple_parse_query(user_query: str) -> Optional[UserQueryFilters]:
     query_lower = user_query.lower().strip()
 
-    # Simple keyword-based fallback for common patterns (faster and more reliable)
+    complex_words = [
+        'whose', 'rhyme', 'longer', 'shorter', 'exactly', 'more', 'less',
+        'odd', 'even', 'three', 'two', 'contains', 'ends', 'birthdate',
+        'birthday', 'age', 'registered', 'profile', 'password', 'username'
+    ]
+
+    if any(word in query_lower for word in complex_words):
+        return None
+
+    gender = None
+    if 'female' in query_lower or 'woman' in query_lower or 'women' in query_lower:
+        gender = "Female"
+    elif 'male' in query_lower and 'female' not in query_lower:
+        gender = "Male"
+    elif 'other' in query_lower:
+        gender = "Other"
+
+    name_substr = None
+    starts_with_mode = False
+
+    if 'named' in query_lower or 'called' in query_lower:
+        match = re.search(r'(?:named|called)\s+([A-Z][a-z]+)', user_query)
+        if match:
+            name_substr = match.group(1)
+
+    elif 'starts with' in query_lower or 'starting with' in query_lower:
+        match = re.search(r'start(?:s|ing)?\s+with\s+([A-Z])', user_query, re.IGNORECASE)
+        if match:
+            name_substr = match.group(1).upper()
+            starts_with_mode = True
+
+    elif 'with' in query_lower and gender:
+        match = re.search(r'with\s+([A-Z][a-z]+)', user_query)
+        if match:
+            name_substr = match.group(1)
+
+    if gender or name_substr:
+        result = UserQueryFilters(gender=gender, name_substr=name_substr, starts_with_mode=starts_with_mode)
+        return result
+
+    return None
+
+
+async def parse_query_ai(user_query: str) -> UserQueryFilters:
+    # Strip whitespace from input
+    user_query = user_query.strip()
+    query_lower = user_query.lower()
+
+    print(f"[DEBUG] Original query: '{user_query}'")
+
+    # Check exact cache first
+    if user_query in QUERY_CACHE:
+        print(f"=== EXACT CACHE HIT ===")
+        print(f"User query: {user_query}")
+        cached_result = QUERY_CACHE[user_query]
+        print(f"Cached filters: {cached_result.dict()}")
+        print(f"======================")
+        return cached_result
+
+    # Check fuzzy cache (normalized query)
+    normalized = normalize_query(user_query)
+    print(f"[DEBUG] Checking fuzzy cache for normalized key: '{normalized}'")
+    print(f"[DEBUG] Current cache keys: {list(QUERY_CACHE.keys())[:5]}")  # Show first 5 keys
+
+    if normalized in QUERY_CACHE:
+        print(f"=== FUZZY CACHE HIT ===")
+        print(f"User query: {user_query}")
+        print(f"Normalized to: {normalized}")
+        cached_result = QUERY_CACHE[normalized]
+        print(f"Cached filters: {cached_result.dict()}")
+        print(f"======================")
+        # Cache the original query too for faster exact matches next time
+        QUERY_CACHE[user_query] = cached_result
+        return cached_result
+
+    print(f"[DEBUG] No cache hit, continuing to parse...")
+
     simple_patterns = {
-        # Gender-only queries - Female
         "list all female": UserQueryFilters(gender="Female", name_substr=None),
         "show all female": UserQueryFilters(gender="Female", name_substr=None),
         "all female users": UserQueryFilters(gender="Female", name_substr=None),
@@ -79,8 +202,6 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
         "show female": UserQueryFilters(gender="Female", name_substr=None),
         "all females": UserQueryFilters(gender="Female", name_substr=None),
         "list females": UserQueryFilters(gender="Female", name_substr=None),
-
-        # Gender-only queries - Male
         "list all male": UserQueryFilters(gender="Male", name_substr=None),
         "show all male": UserQueryFilters(gender="Male", name_substr=None),
         "all male users": UserQueryFilters(gender="Male", name_substr=None),
@@ -88,8 +209,6 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
         "show male": UserQueryFilters(gender="Male", name_substr=None),
         "all males": UserQueryFilters(gender="Male", name_substr=None),
         "list males": UserQueryFilters(gender="Male", name_substr=None),
-
-        # Gender-only queries - Other
         "list all other": UserQueryFilters(gender="Other", name_substr=None),
         "show all other": UserQueryFilters(gender="Other", name_substr=None),
         "all other users": UserQueryFilters(gender="Other", name_substr=None),
@@ -98,14 +217,11 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
         "users with other gender": UserQueryFilters(gender="Other", name_substr=None),
         "users that have a gender of other": UserQueryFilters(gender="Other", name_substr=None),
         "list all users that have a gender of other": UserQueryFilters(gender="Other", name_substr=None),
-
-        # All users
         "list all users": UserQueryFilters(gender=None, name_substr=None),
         "show all users": UserQueryFilters(gender=None, name_substr=None),
         "all users": UserQueryFilters(gender=None, name_substr=None),
     }
 
-    # Check if query matches any simple pattern
     if query_lower in simple_patterns:
         result = simple_patterns[query_lower]
         print(f"=== PATTERN MATCH ===")
@@ -113,117 +229,118 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
         print(f"Matched pattern: {query_lower}")
         print(f"Parsed filters: {result.dict()}")
         print(f"===================")
+        # Cache it
+        QUERY_CACHE[user_query] = result
+        QUERY_CACHE[normalized] = result
         return result
 
-    # Use AI for more complex queries - Optimized for Qwen3
-    system_prompt = """You are a database query parser that outputs only valid JSON.
-Never include explanations, markdown, or any text outside the JSON object."""
+    simple_result = simple_parse_query(user_query)
+    if simple_result is not None:
+        print(f"=== KEYWORD PARSING ===")
+        print(f"User query: {user_query}")
+        print(f"Parsed filters: {simple_result.dict()}")
+        print(f"======================")
+        # Cache it
+        QUERY_CACHE[user_query] = simple_result
+        QUERY_CACHE[normalized] = simple_result
+        return simple_result
 
-    user_prompt = f"""Convert this search query into a JSON object with exactly two keys: "gender" and "name_substr"
-
-RULES:
-1. "gender": Set to "Male", "Female", or "Other" if the query filters by gender, otherwise set to null
-2. "name_substr": Set to a person's name ONLY if the query mentions searching for a specific name
-   - Examples of names: "Taylor", "John", "Smith", "Sarah"
-   - NOT names: "male", "female", "other", "user", "users", "all", "list", "show"
-   - Set to null if no specific person's name is mentioned
-
-EXAMPLES:
-Query: "List all female"
-Response: {{"gender": "Female", "name_substr": null}}
-
-Query: "Female users with Taylor in their name"
-Response: {{"gender": "Female", "name_substr": "Taylor"}}
-
-Query: "Users named John"
-Response: {{"gender": null, "name_substr": "John"}}
-
-Query: "Show males"
-Response: {{"gender": "Male", "name_substr": null}}
-
-Query: "Users with other gender"
-Response: {{"gender": "Other", "name_substr": null}}
-
-Query: "List all users that have a gender of other"
-Response: {{"gender": "Other", "name_substr": null}}
-
-Query: "Find Smith"
-Response: {{"gender": null, "name_substr": "Smith"}}
-
-NOW PARSE THIS QUERY:
-Query: "{user_query}"
-Response:"""
-
-    parsed_json = await chat_completion(user_prompt, system_prompt)
-
-    print(f"=== AI QUERY PARSING ===")
+    print(f"=== USING REMOTE AI (may be slow) ===")
     print(f"User query: {user_query}")
-    print(f"AI raw response: {parsed_json}")
-
-    # Clean up response - handle various formats
-    parsed_json = parsed_json.strip()
-
-    # Remove markdown code blocks
-    if "```" in parsed_json:
-        # Extract content between first and last ```
-        parts = parsed_json.split("```")
-        if len(parts) >= 2:
-            parsed_json = parts[1]
-            # Remove 'json' language marker if present
-            if parsed_json.strip().startswith("json"):
-                parsed_json = parsed_json.strip()[4:]
-
-    # Remove any "Output:" or "Response:" prefix that some models add
-    if parsed_json.lower().startswith(("output:", "response:")):
-        parsed_json = parsed_json.split(":", 1)[1]
-
-    parsed_json = parsed_json.strip()
 
     try:
+        system_prompt = """You output only JSON. No text, no explanation."""
+
+        user_prompt = f"""Query: "{user_query}"
+Output JSON with keys "gender" (Male/Female/Other or null) and "name_substr" (name string or null).
+
+Examples:
+"list female" -> {{"gender":"Female","name_substr":null}}
+"users named John" -> {{"gender":null,"name_substr":"John"}}
+"female users with Taylor" -> {{"gender":"Female","name_substr":"Taylor"}}
+
+JSON:"""
+
+        print(f"Calling remote AI model ({OLLAMA_MODEL})...")
+        parsed_json = await chat_completion(user_prompt, system_prompt)
+
+        print(f"AI raw response: {parsed_json}")
+
+        parsed_json = parsed_json.strip()
+
+        if "```" in parsed_json:
+            parsed_json = parsed_json.split("```")[1] if len(parsed_json.split("```")) > 1 else parsed_json
+            parsed_json = parsed_json.replace("json", "").strip()
+
+        for prefix in ["output:", "response:", "json:", "result:", "answer:"]:
+            if parsed_json.lower().startswith(prefix):
+                parsed_json = parsed_json[len(prefix):].strip()
+
+        json_match = re.search(r'\{[^{}]*"gender"[^{}]*"name_substr"[^{}]*\}', parsed_json)
+        if json_match:
+            parsed_json = json_match.group(0)
+
+        print(f"Cleaned JSON: {parsed_json}")
+
         parsed_dict = json.loads(parsed_json)
 
-        # Normalize the name_substr value
         if "name_substr" in parsed_dict and parsed_dict["name_substr"] is not None:
             name_val = parsed_dict["name_substr"]
 
-            # If AI returned a list, extract the first element
             if isinstance(name_val, list):
                 name_val = name_val[0] if len(name_val) > 0 else None
 
-            # Clean the string value
             if isinstance(name_val, str):
                 name_val = name_val.strip().strip("'\"[]").strip()
-
-                # Validate: don't use gender words as names
-                if name_val.lower() in ["male", "female", "user", "users", "all"]:
+                if name_val.lower() in ["male", "female", "other", "user", "users", "all", "null", "none"]:
                     name_val = None
-
                 parsed_dict["name_substr"] = name_val if name_val else None
             else:
                 parsed_dict["name_substr"] = None
 
-        # Normalize gender
         if "gender" in parsed_dict and parsed_dict["gender"] is not None:
             gender_val = parsed_dict["gender"]
             if isinstance(gender_val, str):
                 gender_val = gender_val.strip().capitalize()
-                # Only accept valid genders
                 if gender_val not in ["Male", "Female", "Other"]:
                     gender_val = None
                 parsed_dict["gender"] = gender_val
 
         print(f"Parsed filters: {parsed_dict}")
         print(f"======================")
-        return UserQueryFilters(**parsed_dict)
 
+        result = UserQueryFilters(**parsed_dict)
+
+        # Cache the result for future use
+        QUERY_CACHE[user_query] = result
+        QUERY_CACHE[normalized] = result
+        print(f"Cached query for future requests")
+
+        return result
+
+    except httpx.ReadTimeout as e:
+        print(f"AI request timed out after 10 seconds: {e}")
+        print(f"Your remote AI server may be slow or unresponsive")
+        print(f"Falling back to empty filter (will return all users)")
+        return UserQueryFilters()
+    except httpx.HTTPError as e:
+        print(f"HTTP error calling AI: {e}")
+        print(f"Check if your OLLAMA_BASE_URL and OLLAMA_API_KEY are correct")
+        print(f"Falling back to empty filter (will return all users)")
+        return UserQueryFilters()
+    except json.JSONDecodeError as e:
+        print(f"AI returned invalid JSON: {e}")
+        print(f"AI response was: {parsed_json}")
+        print(f"Falling back to empty filter (will return all users)")
+        return UserQueryFilters()
     except Exception as e:
-        print(f"Error parsing AI response: {e}")
-        print(f"AI returned: {parsed_json}")
-        # Fallback: return empty filters
+        print(f"AI parsing failed with unexpected error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Falling back to empty filter (will return all users)")
         return UserQueryFilters()
 
 
-# ---------- Database Query ----------
 async def query_users(filters: UserQueryFilters, limit: int = 20) -> List[UserRecord]:
     sql = "SELECT id, full_name, username, gender FROM users WHERE TRUE"
     params = []
@@ -234,13 +351,18 @@ async def query_users(filters: UserQueryFilters, limit: int = 20) -> List[UserRe
 
     if filters.name_substr:
         name_str = str(filters.name_substr)
-        params.append(f"%{name_str}%")
-        sql += f" AND full_name ILIKE ${len(params)}"
+        if filters.starts_with_mode:
+            params.append(f"{name_str}%")
+            sql += f" AND full_name ILIKE ${len(params)}"
+        else:
+            params.append(f"%{name_str}%")
+            sql += f" AND full_name ILIKE ${len(params)}"
 
     sql += f" LIMIT {limit}"
 
     print(f"SQL: {sql}")
     print(f"Params: {params}")
+    print(f"Starts with mode: {filters.starts_with_mode}")
 
     conn = await asyncpg.connect(DATABASE_URL)
     try:
@@ -251,7 +373,6 @@ async def query_users(filters: UserQueryFilters, limit: int = 20) -> List[UserRe
         await conn.close()
 
 
-# ---------- AI Ranking ----------
 async def rank_users_ai(query: str, users: List[UserRecord]) -> List[int]:
     if not users:
         return []
@@ -270,10 +391,8 @@ Your response:"""
 
     ranking_json = await chat_completion(user_prompt, system_prompt)
 
-    # Clean response
     ranking_json = ranking_json.strip()
 
-    # Remove markdown
     if "```" in ranking_json:
         parts = ranking_json.split("```")
         if len(parts) >= 2:
@@ -285,7 +404,6 @@ Your response:"""
 
     try:
         ranked = json.loads(ranking_json)
-        # Ensure it's a list of integers
         if isinstance(ranked, list):
             return [int(x) for x in ranked if isinstance(x, (int, str)) and str(x).isdigit()]
         return []
@@ -295,23 +413,9 @@ Your response:"""
         return []
 
 
-# ---------- Main Filter Function ----------
 async def filter_records_ai(user_query: str, batch_size: int = 20, enable_ranking: bool = False) -> FilteredResult:
-    """
-    Main function to filter records using AI.
-
-    Args:
-        user_query: Natural language search query
-        batch_size: Maximum number of results to return
-        enable_ranking: Whether to use AI ranking (disabled by default for performance)
-    """
-    # Parse query
     filters = await parse_query_ai(user_query)
-
-    # Fetch users from DB
     db_results = await query_users(filters, limit=batch_size)
-
-    # AI ranking is optional and disabled by default for performance
     ranked_ids = None
 
     if enable_ranking and len(db_results) > 1:

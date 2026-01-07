@@ -28,7 +28,7 @@ async def test_ai(
 @app.get("/ai/search")
 async def ai_search_users(
         query: str = Query(..., description="Natural language search query"),
-        batch_size: int = 20,
+        batch_size: int = Query(None, description="Maximum number of results (auto if not specified)"),
         enable_ranking: bool = Query(False, description="Enable AI-based result ranking (slower)")
 ):
     """
@@ -37,9 +37,21 @@ async def ai_search_users(
 
     Args:
         query: Natural language search query (e.g., "Female users with Taylor in their name")
-        batch_size: Maximum number of results to return
+        batch_size: Maximum number of results to return (defaults to smart sizing)
         enable_ranking: Whether to use AI ranking (disabled by default for better performance)
     """
+    # Smart batch sizing if not specified
+    if batch_size is None:
+        query_lower = query.lower()
+        # Specific name searches usually return fewer results
+        if any(word in query_lower for word in ['named', 'name', 'called', 'with', 'has']):
+            batch_size = 50  # Medium limit for name searches
+        # Broad queries like "list all" might return many results
+        elif any(word in query_lower for word in ['all', 'list', 'show', 'every']):
+            batch_size = 100  # Higher limit for broad searches
+        else:
+            batch_size = 50  # Default moderate limit
+
     # Use the AI to parse query and fetch users directly from database
     result = await filter_records_ai(query, batch_size, enable_ranking)
 
@@ -47,8 +59,52 @@ async def ai_search_users(
         "query": query,
         "results": [user.dict() for user in result.results],
         "ranked_ids": result.ranked_ids,
-        "count": len(result.results)
+        "count": len(result.results),
+        "total_possible": batch_size,
+        "truncated": len(result.results) >= batch_size,  # True if there might be more results
+        "message": "Search completed successfully" if len(result.results) > 0 else "No users found matching your search criteria"
     }
+
+
+@app.get("/ai/search/count")
+async def ai_search_count(
+        query: str = Query(..., description="Natural language search query")
+):
+    """
+    Get the total count of matching users without fetching all records.
+    Useful for showing "X results found" before loading them all.
+    """
+    from ai import parse_query_ai
+    import asyncpg
+
+    # Parse the query
+    filters = await parse_query_ai(query)
+
+    # Build count query
+    sql = "SELECT COUNT(*) FROM users WHERE TRUE"
+    params = []
+
+    if filters.gender:
+        params.append(filters.gender)
+        sql += f" AND gender = ${len(params)}"
+
+    if filters.name_substr:
+        params.append(f"%{filters.name_substr}%")
+        sql += f" AND full_name ILIKE ${len(params)}"
+
+    # Get count from database
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        count = await conn.fetchval(sql, *params)
+        return {
+            "query": query,
+            "total_count": count,
+            "filters": filters.dict()
+        }
+    finally:
+        await conn.close()
+
 
 
 # --------------------
