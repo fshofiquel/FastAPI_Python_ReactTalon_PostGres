@@ -1,0 +1,65 @@
+/* App.css - Enhancing Tailwind Dashboard */
+
+/* Fade-in animation for forms and cards */
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* Slight scale-up on hover for cards */
+.card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 12px 25px rgba(0,0,0,0.15);
+}
+
+/* Smooth button hover transitions */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Global font for the app */
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Scrollbar styling for dashboards with many users */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background-color: rgba(0,0,0,0.05);
+}
+
+/* Form card shadow and border radius */
+form {
+  border-radius: 0.75rem; /* rounded-lg */
+  box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+}
+
+/* Input and select focus shadow */
+input:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.5); /* Tailwind blue-500 */
+}
+
+/* Placeholder avatar initials styling */
+.placeholder-avatar {
+  font-weight: bold;
+  font-size: 1rem;
+  color: white;
+  background-color: #9CA3AF; /* Tailwind gray-400 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

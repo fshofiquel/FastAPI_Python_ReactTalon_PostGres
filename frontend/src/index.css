@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------
+   Animations
+--------------------------------------------------- */
+
+/* Fade-in effect for forms, cards, and tables */
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* Card hover effect for table rows or other cards */
+.card:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+  transition: all 0.2s ease-in-out;
+}
+
+/* ---------------------------------------------------
+   Placeholder Avatar
+--------------------------------------------------- */
+
+/* Default placeholder for users without profile pics */
+.placeholder-avatar {
+  background-color: #9CA3AF; /* Tailwind gray-400 */
+  color: white;
+  font-weight: bold;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 9999px; /* Fully rounded */
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+}
+
+/* ---------------------------------------------------
+   Scrollbar Styling
+--------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background-color: rgba(0,0,0,0.05);
+}
+
+/* ---------------------------------------------------
+   Form Enhancements
+--------------------------------------------------- */
+
+/* Smooth input focus effect */
+input:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.5); /* Tailwind blue-500 */
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+/* Form shadow and rounded corners for better UX */
+form {
+  border-radius: 0.75rem; /* rounded-lg */
+  box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+}
+
+/* ---------------------------------------------------
+   Typography
+--------------------------------------------------- */
+
+/* Global font for dashboard */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f3f4f6; /* Tailwind gray-100 */
+}
