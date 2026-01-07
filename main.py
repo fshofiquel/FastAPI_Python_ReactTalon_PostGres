@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 import shutil
 import uuid
-from ai import chat_completion
+from ai import chat_completion, filter_records_ai
 import models, schemas, crud
 from database import engine, get_db
+from math import ceil
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -22,6 +23,31 @@ async def test_ai(
     return {
         "input": prompt,
         "output": response
+    }
+
+@app.get("/ai/search")
+async def ai_search_users(
+        query: str = Query(..., description="Natural language search query"),
+        batch_size: int = 20,
+        enable_ranking: bool = Query(False, description="Enable AI-based result ranking (slower)")
+):
+    """
+    AI-powered search/filter for users based on natural language query.
+    Uses AI to parse the query and fetch matching users from database.
+
+    Args:
+        query: Natural language search query (e.g., "Female users with Taylor in their name")
+        batch_size: Maximum number of results to return
+        enable_ranking: Whether to use AI ranking (disabled by default for better performance)
+    """
+    # Use the AI to parse query and fetch users directly from database
+    result = await filter_records_ai(query, batch_size, enable_ranking)
+
+    return {
+        "query": query,
+        "results": [user.dict() for user in result.results],
+        "ranked_ids": result.ranked_ids,
+        "count": len(result.results)
     }
 
 
