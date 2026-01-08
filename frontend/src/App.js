@@ -17,18 +17,61 @@ function App() {
     });
     const [previewImage, setPreviewImage] = useState(null);
 
+    // AI Search state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchInfo, setSearchInfo] = useState(null);
+
     // Fetch all users from backend
     useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                const res = await axios.get(`${API_URL}/users/`);
-                setUsers(res.data);
-            } catch (err) {
-                console.error("Error fetching users:", err);
-            }
-        };
-        fetchUsers();
+        fetchAllUsers();
     }, []);
+
+    // Debounced search - wait 600ms after user stops typing
+    useEffect(() => {
+        if (searchQuery.trim() === "") {
+            fetchAllUsers();
+            return;
+        }
+
+        setIsSearching(true);
+        const timeoutId = setTimeout(() => {
+            performSearch(searchQuery);
+        }, 600);
+
+        return () => clearTimeout(timeoutId);
+    }, [searchQuery]);
+
+    const fetchAllUsers = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/users/`);
+            setUsers(res.data);
+            setSearchInfo(null);
+            setIsSearching(false);
+        } catch (err) {
+            console.error("Error fetching users:", err);
+            setIsSearching(false);
+        }
+    };
+
+    const performSearch = async (query) => {
+        try {
+            const res = await axios.get(`${API_URL}/ai/search`, {
+                params: { query }
+            });
+            setUsers(res.data.results);
+            setSearchInfo({
+                count: res.data.count,
+                message: res.data.message
+            });
+        } catch (err) {
+            console.error("Error searching users:", err);
+            setUsers([]);
+            setSearchInfo(null);
+        } finally {
+            setIsSearching(false);
+        }
+    };
 
     // Handle input change in form
     const handleInputChange = (e) => {
@@ -70,9 +113,12 @@ function App() {
                 });
             }
 
-            // Refresh list
-            const res = await axios.get(`${API_URL}/users/`);
-            setUsers(res.data);
+            // Refresh list based on current search state
+            if (searchQuery.trim()) {
+                performSearch(searchQuery);
+            } else {
+                fetchAllUsers();
+            }
             resetForm();
             setShowForm(false);
         } catch (err) {
@@ -100,8 +146,13 @@ function App() {
         if (!window.confirm("Are you sure you want to delete this user?")) return;
         try {
             await axios.delete(`${API_URL}/users/${id}`);
-            const res = await axios.get(`${API_URL}/users/`);
-            setUsers(res.data);
+
+            // Refresh based on current view
+            if (searchQuery.trim()) {
+                performSearch(searchQuery);
+            } else {
+                fetchAllUsers();
+            }
         } catch (err) {
             console.error("Error deleting user:", err);
         }
@@ -186,7 +237,7 @@ function App() {
                 {showForm && (
                     <form
                         onSubmit={handleSubmit}
-                        className="bg-white p-6 rounded-lg shadow-md mb-6"
+                        className="bg-white p-6 rounded-lg shadow-md mb-6 animate-fadeIn"
                     >
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <input
@@ -265,69 +316,113 @@ function App() {
                     </form>
                 )}
 
+                {/* AI Search Bar */}
+                <div className="bg-white p-4 rounded-lg shadow-md mb-6 animate-fadeIn">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder='🔍 Smart search... Try "female users" or "users named Taylor" or "list all male"'
+                            className="w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700"
+                        />
+                        {isSearching && (
+                            <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                            </div>
+                        )}
+                        {searchQuery && !isSearching && (
+                            <button
+                                onClick={() => setSearchQuery("")}
+                                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xl"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Search Info */}
+                    {searchInfo && (
+                        <div className="mt-2 text-sm text-gray-600">
+                            {searchInfo.message || `Found ${searchInfo.count} user${searchInfo.count !== 1 ? 's' : ''}`}
+                        </div>
+                    )}
+                    {searchQuery && users.length === 0 && !isSearching && (
+                        <div className="mt-2 text-sm text-gray-500">
+                            No users found matching "{searchQuery}"
+                        </div>
+                    )}
+                </div>
+
                 {/* Users Table */}
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <table className="min-w-full text-left">
-                        <thead className="border-b bg-gray-50">
-                        <tr>
-                            <th className="px-4 py-2">Avatar</th>
-                            <th className="px-4 py-2">Full Name</th>
-                            <th className="px-4 py-2">Username</th>
-                            <th className="px-4 py-2">Gender</th>
-                            <th className="px-4 py-2">Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {users.map((user) => (
-                            <tr key={user.id} className="border-b hover:bg-gray-50">
-                                <td className="px-4 py-2">
-                                    {user.profile_pic ? (
-                                        <img
-                                            src={`${API_URL}/${user.profile_pic}`}
-                                            alt={user.full_name}
-                                            className="w-16 h-16 rounded-full object-cover border"
-                                        />
-                                    ) : (
-                                        <img
-                                            src={generateInitialsImage(user.full_name, user.gender)}
-                                            alt={user.full_name}
-                                            className="w-16 h-16 rounded-full border"
-                                        />
-                                    )}
-                                </td>
-                                <td className="px-4 py-2">{user.full_name}</td>
-                                <td className="px-4 py-2">@{user.username}</td>
-                                <td className="px-4 py-2">
-                    <span
-                        className={`px-2 py-1 rounded-full text-white text-sm ${
-                            user.gender === "Male"
-                                ? "bg-blue-500"
-                                : user.gender === "Female"
-                                    ? "bg-pink-500"
-                                    : "bg-purple-500"
-                        }`}
-                    >
-                      {user.gender}
-                    </span>
-                                </td>
-                                <td className="px-4 py-2 flex gap-2">
-                                    <button
-                                        onClick={() => handleEdit(user)}
-                                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        onClick={() => handleDelete(user.id)}
-                                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
+                <div className="bg-white p-6 rounded-lg shadow-md animate-fadeIn">
+                    {users.length > 0 ? (
+                        <table className="min-w-full text-left">
+                            <thead className="border-b bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-2">Avatar</th>
+                                <th className="px-4 py-2">Full Name</th>
+                                <th className="px-4 py-2">Username</th>
+                                <th className="px-4 py-2">Gender</th>
+                                <th className="px-4 py-2">Actions</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                            {users.map((user) => (
+                                <tr key={user.id} className="border-b hover:bg-gray-50 card">
+                                    <td className="px-4 py-2">
+                                        {user.profile_pic ? (
+                                            <img
+                                                src={`${API_URL}/${user.profile_pic}`}
+                                                alt={user.full_name}
+                                                className="w-16 h-16 rounded-full object-cover border"
+                                            />
+                                        ) : (
+                                            <img
+                                                src={generateInitialsImage(user.full_name, user.gender)}
+                                                alt={user.full_name}
+                                                className="w-16 h-16 rounded-full border"
+                                            />
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-2">{user.full_name}</td>
+                                    <td className="px-4 py-2">@{user.username}</td>
+                                    <td className="px-4 py-2">
+                                        <span
+                                            className={`px-2 py-1 rounded-full text-white text-sm ${
+                                                user.gender === "Male"
+                                                    ? "bg-blue-500"
+                                                    : user.gender === "Female"
+                                                        ? "bg-pink-500"
+                                                        : "bg-purple-500"
+                                            }`}
+                                        >
+                                          {user.gender}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-2 flex gap-2">
+                                        <button
+                                            onClick={() => handleEdit(user)}
+                                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(user.id)}
+                                            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <div className="text-center py-8 text-gray-500">
+                            {isSearching ? "Searching..." : "No users found"}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
