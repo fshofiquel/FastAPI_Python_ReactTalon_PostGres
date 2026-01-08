@@ -58,7 +58,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_IMAGE_DIMENSION = 4096  # 4096x4096 max
 ALLOWED_MIME_TYPES = [
     "image/jpeg",
-    "image/png", 
+    "image/png",
     "image/gif",
     "image/webp"
 ]
@@ -77,16 +77,16 @@ async def log_requests(request: Request, call_next):
     Log all incoming requests and their processing time.
     """
     start_time = time.time()
-    
+
     # Log request
     logger.info(
         f"📨 {request.method} {request.url.path} "
         f"from {request.client.host if request.client else 'unknown'}"
     )
-    
+
     # Process request
     response = await call_next(request)
-    
+
     # Log response
     process_time = time.time() - start_time
     logger.info(
@@ -94,10 +94,10 @@ async def log_requests(request: Request, call_next):
         f"completed in {process_time:.3f}s "
         f"with status {response.status_code}"
     )
-    
+
     # Add timing header
     response.headers["X-Process-Time"] = str(process_time)
-    
+
     return response
 
 # CORS Configuration
@@ -106,7 +106,7 @@ if ENVIRONMENT == "development":
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            "http://localhost:3000", 
+            "http://localhost:3000",
             "http://127.0.0.1:3000",
             "https://localhost:3000",  # HTTPS support
             "https://127.0.0.1:3000"   # HTTPS support
@@ -154,7 +154,7 @@ async def validate_image_upload(file: UploadFile) -> None:
     # Read file content
     content = await file.read()
     await file.seek(0)  # Reset file pointer for later use
-    
+
     # Check file size
     file_size = len(content)
     if file_size > MAX_FILE_SIZE:
@@ -163,35 +163,35 @@ async def validate_image_upload(file: UploadFile) -> None:
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.1f}MB. "
                    f"Your file is {file_size / (1024*1024):.1f}MB."
         )
-    
+
     if file_size == 0:
         raise HTTPException(
             status_code=400,
             detail="Empty file uploaded"
         )
-    
+
     # Validate MIME type using python-magic (more reliable than content_type header)
     try:
         mime_type = magic.from_buffer(content, mime=True)
     except Exception as e:
         logger.error(f"Error detecting MIME type: {e}")
         mime_type = file.content_type  # Fallback to header
-    
+
     if mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid file type: {mime_type}. "
                    f"Allowed types: {', '.join(ALLOWED_MIME_TYPES)}"
         )
-    
+
     # Validate image dimensions using PIL
     try:
         from PIL import Image
         import io
-        
+
         image = Image.open(io.BytesIO(content))
         width, height = image.size
-        
+
         if width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
             raise HTTPException(
                 status_code=400,
@@ -199,9 +199,9 @@ async def validate_image_upload(file: UploadFile) -> None:
                        f"Maximum: {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}. "
                        f"Your image: {width}x{height}"
             )
-        
+
         logger.info(f"✅ Image validated: {width}x{height}, {file_size} bytes, {mime_type}")
-        
+
     except ImportError:
         logger.warning("PIL not installed, skipping dimension validation")
     except Exception as e:
@@ -283,7 +283,7 @@ async def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "timestamp": time.time(),
         "checks": {}
     }
-    
+
     # Check database
     try:
         db.execute(text("SELECT 1"))
@@ -297,7 +297,7 @@ async def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "status": "unhealthy",
             "error": str(e)
         }
-    
+
     # Check file system
     try:
         test_file = UPLOAD_DIR / ".health_check"
@@ -310,7 +310,7 @@ async def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "status": "unhealthy",
             "error": str(e)
         }
-    
+
     # Return appropriate status code
     status_code = 200 if health_status["status"] == "healthy" else 503
     return JSONResponse(content=health_status, status_code=status_code)
@@ -326,7 +326,7 @@ async def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     description="Test the connection to the AI model"
 )
 async def test_ai(
-    prompt: str = Query(..., description="Prompt to send to the AI", examples=["Hello, how are you?"])
+        prompt: str = Query(..., description="Prompt to send to the AI", examples=["Hello, how are you?"])
 ):
     """Test endpoint for AI functionality"""
     try:
@@ -350,21 +350,21 @@ async def test_ai(
     description="Search users using natural language queries"
 )
 async def ai_search_users(
-    query: str = Query(
-        ..., 
-        description="Natural language search query",
-        examples=["female users with Taylor in their name"]
-    ),
-    batch_size: Optional[int] = Query(
-        None, 
-        description="Maximum number of results (auto if not specified)",
-        ge=1,
-        le=200
-    ),
-    enable_ranking: bool = Query(
-        False, 
-        description="Enable AI-based result ranking (slower)"
-    )
+        query: str = Query(
+            ...,
+            description="Natural language search query",
+            examples=["female users with Taylor in their name"]
+        ),
+        batch_size: Optional[int] = Query(
+            None,
+            description="Maximum number of results (auto if not specified)",
+            ge=1,
+            le=200
+        ),
+        enable_ranking: bool = Query(
+            False,
+            description="Enable AI-based result ranking (slower)"
+        )
 ):
     """
     AI-powered search/filter for users based on natural language query.
@@ -385,10 +385,10 @@ async def ai_search_users(
                 batch_size = 100
             else:
                 batch_size = 50
-        
+
         # Perform AI search
         result = await filter_records_ai(query, batch_size, enable_ranking)
-        
+
         return {
             "query": query,
             "results": [user.dict() for user in result.results],
@@ -396,10 +396,10 @@ async def ai_search_users(
             "count": len(result.results),
             "total_possible": batch_size,
             "truncated": len(result.results) >= batch_size,
-            "message": "Search completed successfully" if len(result.results) > 0 
-                      else "No users found matching your search criteria"
+            "message": "Search completed successfully" if len(result.results) > 0
+            else "No users found matching your search criteria"
         }
-        
+
     except Exception as e:
         logger.error(f"AI search failed: {e}")
         raise HTTPException(
@@ -420,12 +420,12 @@ async def ai_search_users(
     description="Create a new user with optional profile picture upload"
 )
 async def create_user(
-    full_name: str = Form(..., description="User's full name", min_length=2, max_length=255),
-    username: str = Form(..., description="Unique username", min_length=3, max_length=50),
-    password: str = Form(..., description="User password", min_length=8),
-    gender: str = Form(..., description="User gender (Male, Female, Other)"),
-    profile_pic: UploadFile = File(None, description="Optional profile picture (max 5MB)"),
-    db: Session = Depends(get_db),
+        full_name: str = Form(..., description="User's full name", min_length=2, max_length=255),
+        username: str = Form(..., description="Unique username", min_length=3, max_length=50),
+        password: str = Form(..., description="User password", min_length=8),
+        gender: str = Form(..., description="User gender (Male, Female, Other)"),
+        profile_pic: UploadFile = File(None, description="Optional profile picture (max 5MB)"),
+        db: Session = Depends(get_db),
 ):
     """
     Create a new user with the following features:
@@ -447,29 +447,29 @@ async def create_user(
                 status_code=400,
                 detail=f"Username '{username}' is already taken. Please choose a different username."
             )
-        
+
         # Validate gender
         if gender not in ["Male", "Female", "Other"]:
             raise HTTPException(
                 status_code=400,
                 detail="Gender must be 'Male', 'Female', or 'Other'"
             )
-        
+
         profile_pic_path = None
 
         # Process profile picture if provided
         if profile_pic and profile_pic.filename:
             # Validate image
             await validate_image_upload(profile_pic)
-            
+
             # Generate safe filename
             file_extension = Path(profile_pic.filename).suffix.lower()
             if not file_extension:
                 file_extension = ".jpg"  # Default extension
-            
+
             filename = f"{username}_{uuid.uuid4().hex}{file_extension}"
             file_path = UPLOAD_DIR / filename
-            
+
             # Save file
             try:
                 with file_path.open("wb") as buffer:
@@ -493,9 +493,9 @@ async def create_user(
 
         created_user = crud.create_user(db=db, user=user_data, profile_pic=profile_pic_path)
         logger.info(f"✅ Created user: {username} (ID: {created_user.id})")
-        
+
         return created_user
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -506,20 +506,32 @@ async def create_user(
 
 @app.get(
     "/users/",
-    response_model=list[schemas.User],
     tags=["Users"],
-    summary="Get all users",
-    description="Retrieve a list of all users with optional pagination"
+    summary="Get all users with pagination",
+    description="Retrieve a paginated list of users"
 )
 def read_users(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=200, description="Maximum number of records to return"),
-    db: Session = Depends(get_db)
+        skip: int = Query(0, ge=0, description="Number of records to skip"),
+        limit: int = Query(50, ge=1, le=200, description="Maximum number of records to return"),
+        db: Session = Depends(get_db)
 ):
-    """Get all users with pagination"""
-    users = crud.get_users(db, skip=skip, limit=limit)
-    logger.info(f"📋 Retrieved {len(users)} users (skip={skip}, limit={limit})")
-    return users
+    """Get all users with pagination - returns paginated response"""
+    # Get total count first (fast with indexes)
+    total = db.query(models.User).count()
+
+    # Get paginated users - FORCE the limit!
+    users_query = db.query(models.User).offset(skip).limit(limit)
+    users = users_query.all()
+
+    logger.info(f"📋 Retrieved {len(users)} users (skip={skip}, limit={limit}, total={total})")
+
+    return {
+        "users": [schemas.User.from_orm(user) for user in users],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + len(users)) < total
+    }
 
 @app.get(
     "/users/{user_id}",
@@ -529,8 +541,8 @@ def read_users(
     description="Retrieve a specific user by their ID"
 )
 def read_user(
-    user_id: int,
-    db: Session = Depends(get_db)
+        user_id: int,
+        db: Session = Depends(get_db)
 ):
     """Get a specific user by ID"""
     user = crud.get_user(db, user_id)
@@ -549,18 +561,18 @@ def read_user(
     description="Update an existing user's information"
 )
 async def update_user(
-    user_id: int,
-    background_tasks: BackgroundTasks,
-    full_name: str = Form(..., min_length=2, max_length=255),
-    username: str = Form(..., min_length=3, max_length=50),
-    password: Optional[str] = Form(None, min_length=8),
-    gender: str = Form(...),
-    profile_pic: UploadFile = File(None),
-    db: Session = Depends(get_db),
+        user_id: int,
+        background_tasks: BackgroundTasks,
+        full_name: str = Form(..., min_length=2, max_length=255),
+        username: str = Form(..., min_length=3, max_length=50),
+        password: Optional[str] = Form(None, min_length=8),
+        gender: str = Form(...),
+        profile_pic: UploadFile = File(None),
+        db: Session = Depends(get_db),
 ):
     """
     Update user information.
-    
+
     - Password is optional - leave empty to keep current password
     - Profile picture is optional - leave empty to keep current picture
     - New profile picture will replace the old one
@@ -573,7 +585,7 @@ async def update_user(
                 status_code=404,
                 detail=f"User with ID {user_id} not found"
             )
-        
+
         # Validate gender
         if gender not in ["Male", "Female", "Other"]:
             raise HTTPException(
@@ -587,7 +599,7 @@ async def update_user(
         if profile_pic and profile_pic.filename:
             # Validate image
             await validate_image_upload(profile_pic)
-            
+
             # Schedule old file deletion in background
             if existing_user.profile_pic:
                 old_file_path = Path(existing_user.profile_pic)
@@ -597,10 +609,10 @@ async def update_user(
             file_extension = Path(profile_pic.filename).suffix.lower()
             if not file_extension:
                 file_extension = ".jpg"
-            
+
             filename = f"{username}_{uuid.uuid4().hex}{file_extension}"
             file_path = UPLOAD_DIR / filename
-            
+
             try:
                 with file_path.open("wb") as buffer:
                     shutil.copyfileobj(profile_pic.file, buffer)
@@ -636,7 +648,7 @@ async def update_user(
 
         logger.info(f"✅ Updated user: {username} (ID: {user_id})")
         return updated_user
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -652,13 +664,13 @@ async def update_user(
     description="Delete a user and their associated profile picture"
 )
 async def delete_user(
-    user_id: int,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+        user_id: int,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_db)
 ):
     """
     Delete a user and their profile picture.
-    
+
     The profile picture file will be deleted from the file system.
     """
     try:
@@ -688,7 +700,7 @@ async def delete_user(
             "user_id": user_id,
             "username": deleted_user.username
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -705,7 +717,7 @@ async def startup_event():
     logger.info("🚀 Application startup complete")
     logger.info(f"📊 Environment: {ENVIRONMENT}")
     logger.info(f"📁 Upload directory: {UPLOAD_DIR.absolute()}")
-    
+
     # Verify database connection
     if check_database_health():
         logger.info("✅ Database connection verified")
