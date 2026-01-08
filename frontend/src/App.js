@@ -442,9 +442,10 @@ function App() {
                     <button
                         onClick={() => setShowForm(true)}
                         disabled={isLoading}
-                        className="mb-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="mb-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                        ➕ Add New User
+                        <span className="text-xl font-bold">+</span>
+                        <span>Add New User</span>
                     </button>
                 )}
 
