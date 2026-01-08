@@ -48,5 +48,70 @@
     "gender": null,
     "name_substr": null,
     "starts_with_mode": false
+  },
+  "list all males": {
+    "gender": "Male",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all male": {
+    "gender": "Male",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "list al": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show al": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all females with": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all female with": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all females with morgan in their name": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all female with morgan inir name": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all females with Morgan in their name": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all females with Morgan": {
+    "gender": "Female",
+    "name_substr": "Morgan",
+    "starts_with_mode": false
+  },
+  "show all female with morgan": {
+    "gender": "Female",
+    "name_substr": "Morgan",
+    "starts_with_mode": false
   }
 }
