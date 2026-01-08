@@ -1,7 +1,7 @@
 [project]
 name = "fastapi-python-reacttalon-postgres"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered user management system with FastAPI, React, and PostgreSQL"
 requires-python = ">=3.14"
 dependencies = [
     "argon2-cffi>=25.1.0",
@@ -15,4 +15,15 @@ dependencies = [
     "python-multipart>=0.0.21",
     "sqlalchemy>=2.0.45",
     "uvicorn>=0.40.0",
+    "python-magic-bin>=0.4.14",
+    "redis>=5.0.1",
+    "python-json-logger>=2.0.7",
 ]
+
+# ==============================================================================
+# WINDOWS FIX:
+# ==============================================================================
+# Changed "python-magic" to "python-magic-bin"
+# This version includes the libmagic library for Windows
+# No system dependencies needed!
+# ==============================================================================

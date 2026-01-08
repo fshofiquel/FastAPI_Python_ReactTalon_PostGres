@@ -1,0 +1,52 @@
+{
+  "find all female users": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all female user": {
+    "gender": "Female",
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all the users with odd num": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all user with odd num": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all the users with a letter count that adds up to": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all user with letter count that adds up to": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all the users with a letter count that adds up to an odd number": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all user with letter count that adds up to odd number": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "find all the users with a letter count that adds up to an odd number for their full name": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  },
+  "show all user with letter count that adds up to odd number for their full name": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false
+  }
+}
