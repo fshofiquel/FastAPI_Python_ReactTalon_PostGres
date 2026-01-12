@@ -850,4 +850,5 @@ Contributions are welcome! Please follow these steps:
 - Connection pooling
 - Prepared statements
 
+
 **Made with ❤️ using FastAPI, React, PostgreSQL, and AI**
