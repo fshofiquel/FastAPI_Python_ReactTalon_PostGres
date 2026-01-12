@@ -43,11 +43,11 @@ redis_client = None
 
 try:
     import redis
-    
+
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 0))
-    
+
     redis_client = redis.Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
@@ -56,12 +56,12 @@ try:
         socket_connect_timeout=5,
         socket_timeout=5
     )
-    
+
     # Test connection
     redis_client.ping()
     USE_REDIS = True
     logger.info("✅ Redis cache connected successfully")
-    
+
 except ImportError:
     logger.info("ℹ️  Redis not installed, using file-based cache")
 except (redis.ConnectionError, redis.TimeoutError) as e:
@@ -71,13 +71,23 @@ except Exception as e:
 
 # Load file-based cache on startup
 def load_cache_from_file():
-    """Load query cache from JSON file"""
+    """Load query cache from JSON file and convert to UserQueryFilters objects"""
     try:
         if CACHE_FILE.exists():
             with open(CACHE_FILE, 'r') as f:
                 data = json.load(f)
-                logger.info(f"📂 Loaded {len(data)} cached queries from file")
-                return data
+                # Convert dicts back to UserQueryFilters objects
+                converted_cache = {}
+                for key, value in data.items():
+                    if isinstance(value, dict):
+                        try:
+                            converted_cache[key] = UserQueryFilters(**value)
+                        except Exception as e:
+                            logger.warning(f"Failed to convert cached entry '{key}': {e}")
+                    else:
+                        converted_cache[key] = value
+                logger.info(f"📂 Loaded {len(converted_cache)} cached queries from file")
+                return converted_cache
     except Exception as e:
         logger.error(f"Failed to load cache file: {e}")
     return {}
@@ -96,7 +106,7 @@ def save_cache_to_file():
                     serializable_cache[key] = value.dict()
                 else:
                     serializable_cache[key] = value
-            
+
             json.dump(serializable_cache, f, indent=2)
             logger.info(f"💾 Saved {len(serializable_cache)} queries to cache file")
     except Exception as e:
@@ -112,12 +122,12 @@ _db_pool: Optional[asyncpg.Pool] = None
 async def get_db_pool() -> asyncpg.Pool:
     """
     Get or create database connection pool (singleton pattern).
-    
+
     Returns:
         asyncpg.Pool: Database connection pool
     """
     global _db_pool
-    
+
     if _db_pool is None:
         try:
             _db_pool = await asyncpg.create_pool(
@@ -132,7 +142,7 @@ async def get_db_pool() -> asyncpg.Pool:
         except Exception as e:
             logger.error(f"Failed to create database pool: {e}")
             raise
-    
+
     return _db_pool
 
 async def close_db_pool():
@@ -169,14 +179,14 @@ class FilteredResult(BaseModel):
 async def chat_completion(user_input: str, system_prompt: Optional[str] = None) -> str:
     """
     Send a request to the Ollama API for chat completion.
-    
+
     Args:
         user_input: User's message
         system_prompt: Optional system prompt
-        
+
     Returns:
         str: AI's response
-        
+
     Raises:
         RuntimeError: If API configuration is missing or request fails
     """
@@ -215,12 +225,12 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
 def normalize_query(query: str) -> str:
     """
     Normalize query for fuzzy cache matching.
-    
+
     This helps similar queries map to the same cache key, improving cache hit rate.
-    
+
     Args:
         query: Original query string
-        
+
     Returns:
         str: Normalized query
     """
@@ -270,15 +280,15 @@ def normalize_query(query: str) -> str:
 def get_cached_query(query: str) -> Optional[UserQueryFilters]:
     """
     Retrieve cached query result.
-    
+
     Tries multiple cache layers:
     1. Redis (if available)
     2. In-memory cache
     3. Normalized query lookup
-    
+
     Args:
         query: Search query
-        
+
     Returns:
         UserQueryFilters if cached, None otherwise
     """
@@ -296,27 +306,34 @@ def get_cached_query(query: str) -> Optional[UserQueryFilters]:
                 return filters
         except Exception as e:
             logger.error(f"Redis get error: {e}")
-    
+
     # Try exact match in memory
     if query in IN_MEMORY_CACHE:
         logger.info(f"🎯 In-memory cache hit for: {query}")
-        return IN_MEMORY_CACHE[query]
-    
+        cached = IN_MEMORY_CACHE[query]
+        # Handle both dict and UserQueryFilters
+        if isinstance(cached, dict):
+            return UserQueryFilters(**cached)
+        return cached
+
     # Try normalized query
     normalized = normalize_query(query)
     if normalized in IN_MEMORY_CACHE:
         logger.info(f"🎯 Fuzzy cache hit for: {query}")
         result = IN_MEMORY_CACHE[normalized]
+        # Handle both dict and UserQueryFilters
+        if isinstance(result, dict):
+            result = UserQueryFilters(**result)
         IN_MEMORY_CACHE[query] = result  # Cache original too
         return result
-    
+
     logger.debug(f"❌ Cache miss for: {query}")
     return None
 
 def cache_query(query: str, filters: UserQueryFilters) -> None:
     """
     Cache query result in all available cache layers.
-    
+
     Args:
         query: Search query
         filters: Parsed filters to cache
@@ -333,14 +350,14 @@ def cache_query(query: str, filters: UserQueryFilters) -> None:
             logger.debug(f"💾 Cached in Redis: {query}")
         except Exception as e:
             logger.error(f"Redis set error: {e}")
-    
+
     # Always cache in memory
     IN_MEMORY_CACHE[query] = filters
     normalized = normalize_query(query)
     IN_MEMORY_CACHE[normalized] = filters
-    
+
     logger.debug(f"💾 Cached in memory: {query}")
-    
+
     # Periodically save to file (every 10th cache)
     if len(IN_MEMORY_CACHE) % 10 == 0:
         save_cache_to_file()
@@ -352,7 +369,7 @@ def get_cache_stats() -> dict:
         "redis_connected": USE_REDIS and redis_client is not None,
         "cache_file_exists": CACHE_FILE.exists()
     }
-    
+
     if USE_REDIS and redis_client:
         try:
             info = redis_client.info('stats')
@@ -361,7 +378,7 @@ def get_cache_stats() -> dict:
             stats["redis_keys"] = redis_client.dbsize()
         except Exception as e:
             logger.error(f"Error getting Redis stats: {e}")
-    
+
     return stats
 
 # ==============================================================================
@@ -371,12 +388,12 @@ def get_cache_stats() -> dict:
 def simple_parse_query(user_query: str) -> Optional[UserQueryFilters]:
     """
     Parse query using simple keyword matching and regex.
-    
+
     This is faster than AI parsing and handles most common queries.
-    
+
     Args:
         user_query: User's search query
-        
+
     Returns:
         UserQueryFilters if parsed successfully, None if query is too complex
     """
@@ -403,24 +420,25 @@ def simple_parse_query(user_query: str) -> Optional[UserQueryFilters]:
     name_substr = None
     starts_with_mode = False
 
-    # Look for "named X" or "called X"
-    if 'named' in query_lower or 'called' in query_lower:
-        match = re.search(r'(?:named|called)\s+([A-Z][a-z]+)', user_query)
+    # Look for "named X", "called X", "name X", or "names X"
+    if any(word in query_lower for word in ['named', 'called', 'name ', 'names ']):
+        # Match word after named/called/name/names - case insensitive
+        match = re.search(r'(?:names?|named|called)\s+([a-z]+)', query_lower)
         if match:
-            name_substr = match.group(1)
+            name_substr = match.group(1).capitalize()
 
     # Look for "starts with X" or "starting with X"
     elif 'starts with' in query_lower or 'starting with' in query_lower:
-        match = re.search(r'start(?:s|ing)?\s+with\s+([A-Z])', user_query, re.IGNORECASE)
+        match = re.search(r'start(?:s|ing)?\s+with\s+([a-z])', query_lower)
         if match:
             name_substr = match.group(1).upper()
             starts_with_mode = True
 
     # Look for "with X" patterns
     elif 'with' in query_lower and gender:
-        match = re.search(r'with\s+([A-Z][a-z]+)', user_query)
+        match = re.search(r'with\s+([a-z]+)', query_lower)
         if match:
-            name_substr = match.group(1)
+            name_substr = match.group(1).capitalize()
 
     if gender or name_substr:
         result = UserQueryFilters(gender=gender, name_substr=name_substr, starts_with_mode=starts_with_mode)
@@ -439,10 +457,10 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
     1. Check cache (exact and fuzzy)
     2. Try simple pattern matching
     3. Fall back to AI parsing
-    
+
     Args:
         user_query: Natural language search query
-        
+
     Returns:
         UserQueryFilters: Parsed query filters
     """
@@ -454,7 +472,7 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
     # ==============================================================================
     # TIER 1: CHECK CACHE
     # ==============================================================================
-    
+
     cached_result = get_cached_query(user_query)
     if cached_result:
         return cached_result
@@ -462,7 +480,7 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
     # ==============================================================================
     # TIER 2: PATTERN MATCHING
     # ==============================================================================
-    
+
     # Exact pattern dictionary for instant responses
     simple_patterns = {
         "list all female": UserQueryFilters(gender="Female"),
@@ -502,7 +520,7 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
     # ==============================================================================
     # TIER 3: AI PARSING
     # ==============================================================================
-    
+
     logger.info(f"🤖 Using AI parser (no cache/pattern match found)")
 
     try:
@@ -511,63 +529,71 @@ Output ONLY valid JSON with no additional text, explanations, or markdown.
 
 Rules:
 - gender: Must be exactly "Male", "Female", "Other", or null
-- name_substr: Extract any mentioned name or null
+- name_substr: Extract any mentioned name or initial letter, or null
+- starts_with_mode: Set to true ONLY if query says "start with", "starts with", "starting with", "begins with", otherwise false
 - Never include gender values in name_substr field
 - If query is ambiguous, prefer null values
 
 Examples:
 Query: "list all female users"
-Output: {"gender":"Female","name_substr":null}
+Output: {"gender":"Female","name_substr":null,"starts_with_mode":false}
 
 Query: "users named John Smith"
-Output: {"gender":null,"name_substr":"John Smith"}
+Output: {"gender":null,"name_substr":"John Smith","starts_with_mode":false}
 
 Query: "find male users with Taylor in their name"
-Output: {"gender":"Male","name_substr":"Taylor"}
+Output: {"gender":"Male","name_substr":"Taylor","starts_with_mode":false}
 
 Query: "show me people starting with J"
-Output: {"gender":null,"name_substr":"J"}
+Output: {"gender":null,"name_substr":"J","starts_with_mode":true}
+
+Query: "users whose names start with R"
+Output: {"gender":null,"name_substr":"R","starts_with_mode":true}
 
 Query: "everyone"
-Output: {"gender":null,"name_substr":null}"""
+Output: {"gender":null,"name_substr":null,"starts_with_mode":false}"""
 
         user_prompt = f"""Parse this query into JSON:
 
 Query: "{user_query}"
 
-Output JSON with exactly two keys:
+Output JSON with exactly three keys:
 - "gender": "Male" | "Female" | "Other" | null
 - "name_substr": string | null
+- "starts_with_mode": true | false
 
 JSON:"""
 
         logger.info(f"📡 Calling AI model: {OLLAMA_MODEL}")
         parsed_json = await chat_completion(user_prompt, system_prompt)
-        
-        logger.debug(f"AI response: {parsed_json}")
+
+        logger.info(f"🤖 Raw AI response: {parsed_json}")
 
         # Clean and extract JSON
         parsed_json = parsed_json.strip()
-        
+
         # Remove markdown code blocks
         if "```" in parsed_json:
-            match = re.search(r'```(?:json)?\s*({[^}]+})\s*```', parsed_json, re.DOTALL)
+            match = re.search(r'```(?:json)?\s*(\{.+?\})\s*```', parsed_json, re.DOTALL)
             if match:
                 parsed_json = match.group(1)
-        
+
         # Remove common prefixes
         for prefix in ["output:", "response:", "json:", "result:", "answer:"]:
             if parsed_json.lower().startswith(prefix):
                 parsed_json = parsed_json[len(prefix):].strip()
-        
-        # Find JSON object
-        json_match = re.search(r'\s*({\s*"gender"[^}]+})\s*', parsed_json, re.DOTALL)
+
+        # Find JSON object - look for complete JSON, not just first field
+        # Match from first { to last } to get complete object
+        json_match = re.search(r'(\{.*\})', parsed_json, re.DOTALL)
         if json_match:
             parsed_json = json_match.group(1)
-        
+
+        logger.info(f"🔧 Cleaned JSON: {parsed_json}")
+
         # Parse JSON
         parsed_dict = json.loads(parsed_json)
-        
+
         # Validate and clean fields
         if "gender" in parsed_dict:
             gender = parsed_dict["gender"]
@@ -577,7 +603,7 @@ JSON:"""
                     logger.warning(f"Invalid gender: {gender}, setting to null")
                     gender = None
             parsed_dict["gender"] = gender
-        
+
         if "name_substr" in parsed_dict:
             name_val = parsed_dict["name_substr"]
             if isinstance(name_val, str):
@@ -586,30 +612,35 @@ JSON:"""
                 if name_val.lower() in ["male", "female", "other", "user", "users", "all", "null", "none", ""]:
                     name_val = None
                 parsed_dict["name_substr"] = name_val if name_val else None
-        
+
+        # Validate starts_with_mode
+        if "starts_with_mode" in parsed_dict:
+            if isinstance(parsed_dict["starts_with_mode"], str):
+                parsed_dict["starts_with_mode"] = parsed_dict["starts_with_mode"].lower() in ["true", "1", "yes"]
+
         result = UserQueryFilters(**parsed_dict)
-        
+
         logger.info(f"✅ AI parse successful: {result.dict()}")
         cache_query(user_query, result)
-        
+
         return result
 
     except httpx.ReadTimeout as e:
         logger.error(f"AI request timed out: {e}")
         logger.warning("Falling back to empty filter")
         return UserQueryFilters()
-        
+
     except httpx.HTTPError as e:
         logger.error(f"HTTP error calling AI: {e}")
         logger.warning("Falling back to empty filter")
         return UserQueryFilters()
-        
+
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON from AI: {e}")
         logger.error(f"Response was: {parsed_json}")
         logger.warning("Falling back to empty filter")
         return UserQueryFilters()
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in AI parsing: {type(e).__name__}: {e}")
         logger.warning("Falling back to empty filter")
@@ -622,11 +653,11 @@ JSON:"""
 async def query_users(filters: UserQueryFilters, limit: int = 20) -> List[UserRecord]:
     """
     Query users from database using connection pool.
-    
+
     Args:
         filters: Query filters
         limit: Maximum number of results
-        
+
     Returns:
         List of UserRecord objects
     """
@@ -674,11 +705,11 @@ async def query_users(filters: UserQueryFilters, limit: int = 20) -> List[UserRe
 async def rank_users_ai(query: str, users: List[UserRecord]) -> List[int]:
     """
     Rank users by relevance using AI (optional, slower).
-    
+
     Args:
         query: Original search query
         users: List of users to rank
-        
+
     Returns:
         List of user IDs in order of relevance
     """
@@ -710,19 +741,19 @@ Your response:"""
 
         ranking_json = await chat_completion(user_prompt, system_prompt)
         ranking_json = ranking_json.strip()
-        
+
         # Extract JSON array
         match = re.search(r'\[\s*(?:\d+\s*,\s*)*\d+\s*\]', ranking_json)
         if match:
             ranking_json = match.group(0)
-        
+
         ranked = json.loads(ranking_json)
         if isinstance(ranked, list):
             return [int(x) for x in ranked if isinstance(x, (int, str)) and str(x).isdigit()]
-        
+
         # Fallback to original order
         return [u.id for u in users]
-        
+
     except Exception as e:
         logger.error(f"Ranking error: {e}")
         return [u.id for u in users]
@@ -732,27 +763,27 @@ Your response:"""
 # ==============================================================================
 
 async def filter_records_ai(
-    user_query: str,
-    batch_size: int = 20,
-    enable_ranking: bool = False
+        user_query: str,
+        batch_size: int = 20,
+        enable_ranking: bool = False
 ) -> FilteredResult:
     """
     Main function to filter users based on natural language query.
-    
+
     Args:
         user_query: Natural language search query
         batch_size: Maximum number of results
         enable_ranking: Whether to use AI ranking (slower)
-        
+
     Returns:
         FilteredResult with users and optional ranking
     """
     # Parse query
     filters = await parse_query_ai(user_query)
-    
+
     # Query database
     db_results = await query_users(filters, limit=batch_size)
-    
+
     ranked_ids = None
 
     # Optional AI ranking

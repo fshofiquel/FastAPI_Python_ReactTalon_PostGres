@@ -74,22 +74,6 @@ function App() {
         }
     }, [currentPage]);
 
-    // Debounced search
-    useEffect(() => {
-        if (searchQuery.trim() === "") {
-            setCurrentPage(1);
-            fetchUsers(1);
-            return;
-        }
-
-        setIsSearching(true);
-        const timeoutId = setTimeout(() => {
-            performSearch(searchQuery);
-        }, 600);
-
-        return () => clearTimeout(timeoutId);
-    }, [searchQuery]);
-
     // Auto-dismiss success messages
     useEffect(() => {
         if (success) {
@@ -133,6 +117,7 @@ function App() {
     const performSearch = async (query) => {
         try {
             setError(null);
+            setIsSearching(true);
             const res = await axios.get(`${API_URL}/ai/search`, {
                 params: { query, batch_size: 200 }
             });
@@ -152,6 +137,25 @@ function App() {
             setError(err.response?.data?.detail || "Search failed");
         } finally {
             setIsSearching(false);
+        }
+    };
+
+    const handleSearch = (e) => {
+        e.preventDefault(); // Prevent form submission
+        if (searchQuery.trim() === "") {
+            // Clear search - fetch all users
+            setSearchInfo(null);
+            setCurrentPage(1);
+            fetchUsers(1);
+        } else {
+            // Perform search
+            performSearch(searchQuery);
+        }
+    };
+
+    const handleSearchKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            handleSearch(e);
         }
     };
 
@@ -488,16 +492,24 @@ function App() {
 
                 {/* Search Bar */}
                 <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-                    <div className="relative">
+                    <div className="relative flex gap-2">
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder='🔍 Smart search... Try "female users" or "users named Taylor"'
-                            className="w-full px-4 py-3 border rounded-lg"
+                            onKeyPress={handleSearchKeyPress}
+                            placeholder='🔍 Smart search... Try "female users" or "users named Taylor" (Press Enter to search)'
+                            className="flex-1 px-4 py-3 border rounded-lg"
                         />
+                        <button
+                            onClick={handleSearch}
+                            disabled={isSearching}
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
+                        >
+                            {isSearching ? "Searching..." : "Search"}
+                        </button>
                         {isSearching && (
-                            <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                            <div className="absolute right-24 top-1/2 transform -translate-y-1/2">
                                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
                             </div>
                         )}
