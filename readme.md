@@ -2,8 +2,8 @@
 
 A full-stack user management application with natural language search powered by AI. Built with FastAPI, React, PostgreSQL, and Ollama.
 
-![Python](https://img.shields.io/badge/Python-3.14-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.128+-green)
+![Python](https://img.shields.io/badge/Python-3.14+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
 ![React](https://img.shields.io/badge/React-18+-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
@@ -14,8 +14,9 @@ A full-stack user management application with natural language search powered by
 
 ### 🎯 Core Features
 - **CRUD Operations** - Create, Read, Update, Delete users
+- **Advanced Pagination** - Server-side pagination with "Total Count" and "Has More" flags
 - **Profile Pictures** - Upload and manage user profile images
-- **Auto-Generated Avatars** - Initials-based avatars with gender-specific colors
+- **Auto-Generated Avatars** - Initials-based avatars generated on HTML5 Canvas
 - **AI-Powered Search** - Natural language queries like "show me all female users" or "users named Taylor"
 - **Real-time Validation** - Client and server-side input validation
 - **Responsive Design** - Works on desktop, tablet, and mobile
@@ -35,9 +36,12 @@ A full-stack user management application with natural language search powered by
 - **Background Tasks** - Non-blocking file operations
 
 ### 🎨 User Experience
+- **Tailwind CSS UI** - Modern, sleek dashboard with responsive layout
+- **Animations** - Smooth fade-in transitions for cards and forms
 - **Error Notifications** - Clear, user-friendly error messages
 - **Success Feedback** - Visual confirmation of actions
 - **Loading Indicators** - Real-time operation status
+- **Pagination Controls** - Intuitive navigation for large datasets
 - **Debounced Search** - Smooth, responsive search experience
 
 ---
@@ -63,7 +67,8 @@ A full-stack user management application with natural language search powered by
 │  • Request Logging                                          │
 └─────┬───────────────────┬───────────────────┬───────────────┘
       │                   │                   │
-      │ SQLAlchemy        │ asyncpg           │ httpx
+      │ SQLAlchemy ORM    │ redis-py          │ httpx
+      │ (PostgreSQL)      │ (optional)        │ (async HTTP)
       │                   │                   │
 ┌─────▼─────┐      ┌─────▼─────┐      ┌─────▼─────┐
 │PostgreSQL │      │   Redis   │      │  Ollama   │
@@ -183,7 +188,7 @@ cp .env.example .env
 DATABASE_URL=postgresql://postgres:password@localhost:5432/user_management
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key_here
-OLLAMA_MODEL=qwen3:1.7b
+OLLAMA_MODEL=qwen2.5vl:latest
 ENVIRONMENT=development
 
 # Optional: Redis cache (improves performance)
@@ -196,7 +201,7 @@ REDIS_DB=0
 
 ```bash
 # Install Ollama model
-ollama pull qwen3:1.7b
+ollama pull qwen2.5vl:latest
 
 # Start Ollama server (if not running)
 ollama serve
@@ -243,25 +248,24 @@ npm start
 
 ```
 FastAPI_Python_ReactTalon_PostGres/
-├── backend/
-│   ├── main.py              # FastAPI application & routes
-│   ├── database.py          # Database configuration & pooling
-│   ├── models.py            # SQLAlchemy models
-│   ├── schemas.py           # Pydantic schemas
-│   ├── crud.py              # Database operations
-│   ├── ai.py                # AI search, normalization & caching
-│   ├── .env                 # Environment variables (create from .env.example)
-│   ├── .env.example         # Environment template
-│   ├── pyproject.toml       # Python dependencies
-│   └── uploads/             # User profile pictures
+├── main.py              # FastAPI application & routes
+├── database.py          # Database configuration & pooling
+├── models.py            # SQLAlchemy models
+├── schemas.py           # Pydantic schemas
+├── crud.py              # Database operations
+├── ai.py                # AI search, normalization & caching
+├── .env                 # Environment variables
+├── .env.example         # Environment template
+├── pyproject.toml       # Python dependencies (uv)
+├── uploads/             # User profile pictures
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── App.js           # Main React component
+│   │   ├── App.js           # Main React component (Tailwind UI)
 │   │   ├── App.css          # Styles
 │   │   └── index.js         # React entry point
 │   ├── package.json         # Node dependencies
-│   ├── .env                 # Frontend config (create this)
+│   ├── .env                 # Frontend config
 │   └── public/              # Static assets
 │
 ├── README.md                # This file
@@ -369,7 +373,7 @@ DATABASE_URL=postgresql://user:password@host:port/database
 # AI Model (Required)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key
-OLLAMA_MODEL=qwen3:1.7b
+OLLAMA_MODEL=qwen2.5vl:latest
 
 # Redis Cache (Optional - improves performance)
 REDIS_HOST=localhost
@@ -402,7 +406,7 @@ MAX_IMAGE_DIMENSION = 4096  # 4096x4096 pixels
 ### AI Model Configuration
 
 The system uses Ollama for local AI inference. Recommended models:
-- **qwen3:1.7b** - Fast, good for development (default)
+- **qwen2.5vl:latest** - Excellent vision-language model, fast (default)
 - **qwen2.5:7b** - Better accuracy, slower
 - **llama3:8b** - Alternative option
 
@@ -517,10 +521,10 @@ ollama serve
 
 # Pull model if not installed
 ollama list  # Check installed models
-ollama pull qwen3:1.7b
+ollama pull qwen2.5vl:latest
 
 # Test model
-ollama run qwen3:1.7b "Hello"
+ollama run qwen2.5vl:latest "Hello"
 
 # Check .env has correct settings
 cat .env | grep OLLAMA
@@ -768,7 +772,7 @@ Contributions are welcome! Please follow these steps:
 - **Ollama** - Local LLM inference
 - **Argon2** - Secure password hashing
 - **Tailwind CSS** - Utility-first CSS framework
-- **asyncpg** - Fast async PostgreSQL driver
+- **SQLAlchemy** - Python SQL toolkit and ORM
 
 ---
 
@@ -844,11 +848,13 @@ Contributions are welcome! Please follow these steps:
 - Multiple model options
 - No internet required
 
-**asyncpg:**
-- Faster than psycopg2
-- Native async support
-- Connection pooling
-- Prepared statements
+**SQLAlchemy:**
+- Industry-standard ORM for Python
+- Connection pooling with QueuePool
+- Support for raw SQL when needed
+- Easy model definitions
+- Automatic query generation
 
+---
 
 **Made with ❤️ using FastAPI, React, PostgreSQL, and AI**

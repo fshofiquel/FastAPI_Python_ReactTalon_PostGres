@@ -1,7 +1,44 @@
-from pydantic import BaseModel, Field, validator
-from typing import Optional
-from datetime import datetime
-import re
+"""
+schemas.py - Pydantic Request/Response Schemas
+
+This module defines Pydantic models for data validation and serialization.
+Schemas ensure type safety at API boundaries and generate automatic API documentation.
+
+Schema Hierarchy for Users:
+    UserBase         - Common fields shared by all user schemas
+        ↓
+    UserCreate       - For creating users (includes password)
+    UserUpdate       - For updating users (all fields optional)
+    User             - For API responses (includes id, timestamps)
+    UserInDB         - Internal use only (includes password hash)
+
+Request vs Response Schemas:
+    - Request schemas (UserCreate, UserUpdate): Validate incoming data
+    - Response schemas (User, UserList): Format outgoing data
+
+Field Validation:
+    Pydantic validators provide detailed error messages to API consumers:
+    - username: Alphanumeric + underscore, 3-50 chars
+    - password: Minimum 8 characters
+    - gender: Must be "Male", "Female", or "Other"
+    - full_name: Minimum 2 characters, trimmed whitespace
+
+API Documentation:
+    The Field() function provides metadata for OpenAPI documentation:
+    - description: Shown in Swagger UI
+    - examples: Sample values for testing
+    - min_length/max_length: Validation constraints
+
+Configuration:
+    Schemas use Pydantic v2 configuration:
+    - from_attributes = True: Allows automatic conversion from SQLAlchemy models
+    - json_encoders: Custom serialization for datetime fields
+"""
+
+from pydantic import BaseModel, Field, validator  # Pydantic v2 components
+from typing import Optional    # Optional type hint
+from datetime import datetime  # Datetime handling
+import re                      # Regular expressions for validation
 
 # ==============================================================================
 # USER SCHEMAS

@@ -1,0 +1,24 @@
+{
+  "find user with longest username": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false,
+    "name_length_parity": null,
+    "has_profile_pic": null,
+    "sort_by": "username_length",
+    "sort_order": "desc",
+    "query_understood": true,
+    "parse_warnings": []
+  },
+  "show user with longest username": {
+    "gender": null,
+    "name_substr": null,
+    "starts_with_mode": false,
+    "name_length_parity": null,
+    "has_profile_pic": null,
+    "sort_by": "username_length",
+    "sort_order": "desc",
+    "query_understood": true,
+    "parse_warnings": []
+  }
+}

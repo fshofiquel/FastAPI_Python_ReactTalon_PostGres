@@ -1,27 +1,75 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from pathlib import Path
-import shutil
-import uuid
-import os
-import logging
-import time
-from typing import Optional, Dict, Any
-import magic  # python-magic for MIME type detection
+"""
+main.py - FastAPI Application Entry Point
 
-# Import local modules
-from ai import chat_completion, filter_records_ai
-import models, schemas, crud
-from database import engine, get_db, check_database_health, get_pool_stats
+This is the main entry point for the AI-powered User Management API.
+It defines all HTTP endpoints, middleware, and application configuration.
+
+The API provides:
+- User CRUD operations (Create, Read, Update, Delete)
+- AI-powered natural language search using Ollama LLM
+- File upload handling for profile pictures
+- Health monitoring endpoints
+
+Architecture:
+    Client Request → FastAPI → SQLAlchemy → PostgreSQL
+                         ↓
+                    AI Module → Ollama LLM (for search queries)
+"""
+
+# ==============================================================================
+# IMPORTS
+# ==============================================================================
+
+# FastAPI framework components
+from fastapi import (
+    FastAPI,           # Main application class
+    Depends,           # Dependency injection decorator
+    HTTPException,     # HTTP error responses
+    UploadFile,        # File upload handling
+    File,              # File parameter marker
+    Form,              # Form data parameter marker
+    Query,             # Query parameter marker
+    Request,           # HTTP request object
+    BackgroundTasks    # Background task execution
+)
+from fastapi.middleware.cors import CORSMiddleware  # Cross-Origin Resource Sharing
+from fastapi.staticfiles import StaticFiles          # Static file serving
+from fastapi.responses import JSONResponse           # JSON response helper
+
+# Database components
+from sqlalchemy.orm import Session  # Database session type
+from sqlalchemy import text         # Raw SQL text wrapper
+
+# Standard library
+from pathlib import Path     # File path handling
+import shutil                # File operations (copy, move)
+import uuid                  # Unique identifier generation
+import os                    # Environment variables
+import logging               # Application logging
+import time                  # Timing operations
+from typing import Optional, Dict, Any  # Type hints
+
+# Third-party
+import magic  # python-magic for reliable MIME type detection (not just file extension)
+
+# Local application modules
+from ai import chat_completion, filter_records_ai  # AI search functionality
+import models   # SQLAlchemy database models
+import schemas  # Pydantic request/response schemas
+import crud     # Database CRUD operations
+from database import (
+    engine,                # SQLAlchemy database engine
+    get_db,                # Database session dependency
+    check_database_health, # Health check function
+    get_pool_stats         # Connection pool statistics
+)
 
 # ==============================================================================
 # LOGGING CONFIGURATION
 # ==============================================================================
 
+# Configure logging format with timestamp, module name, level, and message
+# This helps with debugging and monitoring in production
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -136,26 +184,8 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # FILE VALIDATION HELPERS
 # ==============================================================================
 
-async def validate_image_upload(file: UploadFile) -> None:
-    """
-    Validate uploaded image file for security.
-    
-    Checks:
-    - File size (max 5MB)
-    - MIME type (images only)
-    - Image dimensions (max 4096x4096)
-    
-    Args:
-        file: Uploaded file to validate
-        
-    Raises:
-        HTTPException: If validation fails
-    """
-    # Read file content
-    content = await file.read()
-    await file.seek(0)  # Reset file pointer for later use
-
-    # Check file size
+def _check_file_size(content: bytes) -> None:
+    """Check file size constraints."""
     file_size = len(content)
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
@@ -163,20 +193,21 @@ async def validate_image_upload(file: UploadFile) -> None:
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.1f}MB. "
                    f"Your file is {file_size / (1024*1024):.1f}MB."
         )
-
     if file_size == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Empty file uploaded"
-        )
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
 
-    # Validate MIME type using python-magic (more reliable than content_type header)
+
+def _detect_mime_type(content: bytes, fallback_type: str) -> str:
+    """Detect MIME type using python-magic with fallback."""
     try:
-        mime_type = magic.from_buffer(content, mime=True)
+        return magic.from_buffer(content, mime=True)
     except Exception as e:
         logger.error(f"Error detecting MIME type: {e}")
-        mime_type = file.content_type  # Fallback to header
+        return fallback_type
 
+
+def _check_mime_type(mime_type: str) -> None:
+    """Validate MIME type against allowed types."""
     if mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=400,
@@ -184,7 +215,9 @@ async def validate_image_upload(file: UploadFile) -> None:
                    f"Allowed types: {', '.join(ALLOWED_MIME_TYPES)}"
         )
 
-    # Validate image dimensions using PIL
+
+def _check_image_dimensions(content: bytes) -> None:
+    """Validate image dimensions using PIL."""
     try:
         from PIL import Image
         import io
@@ -199,17 +232,72 @@ async def validate_image_upload(file: UploadFile) -> None:
                        f"Maximum: {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}. "
                        f"Your image: {width}x{height}"
             )
-
-        logger.info(f"✅ Image validated: {width}x{height}, {file_size} bytes, {mime_type}")
+        logger.info(f"✅ Image validated: {width}x{height}, {len(content)} bytes")
 
     except ImportError:
         logger.warning("PIL not installed, skipping dimension validation")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error validating image: {e}")
+        raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
+
+
+async def validate_image_upload(file: UploadFile) -> None:
+    """
+    Validate uploaded image file for security.
+
+    Checks:
+    - File size (max 5MB)
+    - MIME type (images only)
+    - Image dimensions (max 4096x4096)
+    """
+    content = await file.read()
+    await file.seek(0)
+
+    _check_file_size(content)
+    mime_type = _detect_mime_type(content, file.content_type)
+    _check_mime_type(mime_type)
+    _check_image_dimensions(content)
+
+# ==============================================================================
+# USER INPUT VALIDATION HELPERS
+# ==============================================================================
+
+VALID_GENDERS = ["Male", "Female", "Other"]
+
+
+def _validate_gender(gender: str) -> None:
+    """Validate gender value."""
+    if gender not in VALID_GENDERS:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid or corrupted image file"
+            detail=f"Gender must be one of: {', '.join(VALID_GENDERS)}"
         )
+
+
+async def _save_profile_picture(file: UploadFile, username: str) -> str:
+    """
+    Validate and save profile picture.
+
+    Returns:
+        str: Path to saved file (e.g., 'uploads/username_uuid.jpg')
+    """
+    await validate_image_upload(file)
+
+    file_extension = Path(file.filename).suffix.lower() or ".jpg"
+    filename = f"{username}_{uuid.uuid4().hex}{file_extension}"
+    file_path = UPLOAD_DIR / filename
+
+    try:
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        logger.info(f"📸 Saved profile picture: {filename}")
+        return f"uploads/{filename}"
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file")
+
 
 # ==============================================================================
 # BACKGROUND TASKS
@@ -347,7 +435,7 @@ async def test_ai(
     "/ai/search",
     tags=["AI", "Users"],
     summary="AI-powered user search",
-    description="Search users using natural language queries"
+    description="Search users using natural language queries with pagination"
 )
 async def ai_search_users(
         query: str = Query(
@@ -355,49 +443,62 @@ async def ai_search_users(
             description="Natural language search query",
             examples=["female users with Taylor in their name"]
         ),
-        batch_size: Optional[int] = Query(
-            None,
-            description="Maximum number of results (auto if not specified)",
+        skip: int = Query(
+            0,
+            description="Number of results to skip (for pagination)",
+            ge=0
+        ),
+        limit: int = Query(
+            50,
+            description="Maximum number of results per page",
             ge=1,
             le=200
         ),
         enable_ranking: bool = Query(
             False,
             description="Enable AI-based result ranking (slower)"
-        )
+        ),
+        db: Session = Depends(get_db)
 ):
     """
     AI-powered search/filter for users based on natural language query.
-    
+
     Examples:
     - "female users with Taylor"
     - "users starting with J"
     - "list all male"
     - "users named Jordan"
+    - "users with odd number of letters in their name"
+
+    Supports pagination with skip and limit parameters.
     """
     try:
-        # Smart batch sizing if not specified
-        if batch_size is None:
-            query_lower = query.lower()
-            if any(word in query_lower for word in ['named', 'name', 'called', 'with', 'has']):
-                batch_size = 50
-            elif any(word in query_lower for word in ['all', 'list', 'show', 'every']):
-                batch_size = 100
-            else:
-                batch_size = 50
+        # Perform AI search with pagination
+        result = await filter_records_ai(db, query, batch_size=limit, skip=skip, enable_ranking=enable_ranking)
 
-        # Perform AI search
-        result = await filter_records_ai(query, batch_size, enable_ranking)
+        # Build response message based on parse status
+        if not result.query_understood:
+            message = "Query could not be fully understood - showing all users"
+        elif len(result.results) > 0:
+            message = "Search completed successfully"
+        else:
+            message = "No users found matching your search criteria"
 
         return {
             "query": query,
-            "results": [user.dict() for user in result.results],
+            "results": [user.model_dump() for user in result.results],
             "ranked_ids": result.ranked_ids,
+            # Pagination info
             "count": len(result.results),
-            "total_possible": batch_size,
-            "truncated": len(result.results) >= batch_size,
-            "message": "Search completed successfully" if len(result.results) > 0
-            else "No users found matching your search criteria"
+            "total": result.total_count,
+            "skip": skip,
+            "limit": limit,
+            "has_more": (skip + len(result.results)) < result.total_count,
+            "message": message,
+            # Parse feedback fields
+            "query_understood": result.query_understood,
+            "parse_warnings": result.parse_warnings,
+            "filters_applied": result.filters_applied
         }
 
     except Exception as e:
@@ -428,60 +529,26 @@ async def create_user(
         db: Session = Depends(get_db),
 ):
     """
-    Create a new user with the following features:
-    
-    - Validates username uniqueness before insert
-    - Hashes password using Argon2
-    - Validates and stores profile picture
-    - Returns created user object
-    
+    Create a new user with profile picture support.
+
     **File Upload Requirements:**
     - Maximum size: 5MB
     - Allowed formats: JPEG, PNG, GIF, WebP
     - Maximum dimensions: 4096x4096
     """
     try:
-        # Check username uniqueness BEFORE processing file
+        # Validate inputs
         if crud.username_exists(db, username):
             raise HTTPException(
                 status_code=400,
                 detail=f"Username '{username}' is already taken. Please choose a different username."
             )
-
-        # Validate gender
-        if gender not in ["Male", "Female", "Other"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Gender must be 'Male', 'Female', or 'Other'"
-            )
-
-        profile_pic_path = None
+        _validate_gender(gender)
 
         # Process profile picture if provided
+        profile_pic_path = None
         if profile_pic and profile_pic.filename:
-            # Validate image
-            await validate_image_upload(profile_pic)
-
-            # Generate safe filename
-            file_extension = Path(profile_pic.filename).suffix.lower()
-            if not file_extension:
-                file_extension = ".jpg"  # Default extension
-
-            filename = f"{username}_{uuid.uuid4().hex}{file_extension}"
-            file_path = UPLOAD_DIR / filename
-
-            # Save file
-            try:
-                with file_path.open("wb") as buffer:
-                    shutil.copyfileobj(profile_pic.file, buffer)
-                profile_pic_path = f"uploads/{filename}"
-                logger.info(f"📸 Saved profile picture: {filename}")
-            except Exception as e:
-                logger.error(f"Failed to save file: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to save uploaded file"
-                )
+            profile_pic_path = await _save_profile_picture(profile_pic, username)
 
         # Create user
         user_data = schemas.UserCreate(
@@ -490,7 +557,6 @@ async def create_user(
             password=password,
             gender=gender,
         )
-
         created_user = crud.create_user(db=db, user=user_data, profile_pic=profile_pic_path)
         logger.info(f"✅ Created user: {username} (ID: {created_user.id})")
 
@@ -578,73 +644,32 @@ async def update_user(
     - New profile picture will replace the old one
     """
     try:
-        # Get existing user
+        # Verify user exists
         existing_user = crud.get_user(db, user_id)
         if not existing_user:
-            raise HTTPException(
-                status_code=404,
-                detail=f"User with ID {user_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
 
-        # Validate gender
-        if gender not in ["Male", "Female", "Other"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Gender must be 'Male', 'Female', or 'Other'"
-            )
-
-        profile_pic_path = None
+        _validate_gender(gender)
 
         # Process new profile picture if provided
+        profile_pic_path = None
         if profile_pic and profile_pic.filename:
-            # Validate image
-            await validate_image_upload(profile_pic)
-
             # Schedule old file deletion in background
             if existing_user.profile_pic:
-                old_file_path = Path(existing_user.profile_pic)
-                background_tasks.add_task(cleanup_old_file, old_file_path)
-
-            # Save new file
-            file_extension = Path(profile_pic.filename).suffix.lower()
-            if not file_extension:
-                file_extension = ".jpg"
-
-            filename = f"{username}_{uuid.uuid4().hex}{file_extension}"
-            file_path = UPLOAD_DIR / filename
-
-            try:
-                with file_path.open("wb") as buffer:
-                    shutil.copyfileobj(profile_pic.file, buffer)
-                profile_pic_path = f"uploads/{filename}"
-                logger.info(f"📸 Saved new profile picture: {filename}")
-            except Exception as e:
-                logger.error(f"Failed to save file: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to save uploaded file"
-                )
+                background_tasks.add_task(cleanup_old_file, Path(existing_user.profile_pic))
+            profile_pic_path = await _save_profile_picture(profile_pic, username)
 
         # Update user
         user_data = schemas.UserCreate(
             full_name=full_name,
             username=username,
-            password=password if password else "",  # Empty string if not changing
+            password=password if password else "",
             gender=gender,
         )
-
-        updated_user = crud.update_user(
-            db=db,
-            user_id=user_id,
-            user=user_data,
-            profile_pic=profile_pic_path,
-        )
+        updated_user = crud.update_user(db=db, user_id=user_id, user=user_data, profile_pic=profile_pic_path)
 
         if not updated_user:
-            raise HTTPException(
-                status_code=404,
-                detail=f"User with ID {user_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
 
         logger.info(f"✅ Updated user: {username} (ID: {user_id})")
         return updated_user

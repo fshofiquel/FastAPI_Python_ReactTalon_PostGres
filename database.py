@@ -1,11 +1,45 @@
-import os
-import sys
-from sqlalchemy import create_engine, event, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import QueuePool
-from dotenv import load_dotenv, find_dotenv
-import logging
+"""
+database.py - Database Configuration and Connection Management
+
+This module handles all database connectivity for the application using SQLAlchemy ORM.
+It provides:
+- Database engine creation with connection pooling
+- Session management for request-scoped database access
+- Health check functionality for monitoring
+- Environment-specific configuration (development, production, testing)
+
+Connection Pooling:
+    The application uses SQLAlchemy's QueuePool for efficient connection management.
+    - Development: 5 connections (smaller pool for debugging)
+    - Production: 20 connections + 10 overflow (handles high traffic)
+    - Pre-ping enabled: Validates connections before use to avoid stale connections
+
+Usage in FastAPI:
+    Use the get_db() dependency to get a database session in your route handlers:
+
+    @app.get("/users/")
+    def get_users(db: Session = Depends(get_db)):
+        return db.query(User).all()
+
+    The session is automatically closed after the request completes.
+
+Environment Variables Required:
+    DATABASE_URL: PostgreSQL connection string
+        Format: postgresql://username:password@host:port/database
+        Example: postgresql://postgres:password@localhost:5432/user_management
+
+    ENVIRONMENT: (optional) "development", "production", or "testing"
+        Defaults to "development" if not set.
+"""
+
+import os       # Environment variable access
+import sys      # System exit on critical errors
+import logging  # Application logging
+from sqlalchemy import create_engine, event, text  # Core SQLAlchemy components
+from sqlalchemy.ext.declarative import declarative_base  # ORM base class
+from sqlalchemy.orm import sessionmaker  # Session factory
+from sqlalchemy.pool import QueuePool    # Connection pool implementation
+from dotenv import load_dotenv, find_dotenv  # Load .env file
 
 logger = logging.getLogger(__name__)
 

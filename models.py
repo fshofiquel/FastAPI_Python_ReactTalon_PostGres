@@ -1,8 +1,43 @@
+"""
+models.py - SQLAlchemy Database Models
+
+This module defines the database schema using SQLAlchemy ORM models.
+Each model class corresponds to a table in the PostgreSQL database.
+
+Models Defined:
+    User - Application user with profile information
+
+Key Features:
+    - Automatic timestamps (created_at, updated_at) managed by SQLAlchemy
+    - Input validation using @validates decorators
+    - Database-level constraints (check constraints, unique constraints)
+    - Optimized indexes for common query patterns
+
+Database Indexes:
+    The User model includes several indexes for performance:
+    - idx_user_username: Unique index for fast username lookups
+    - idx_user_gender: Index for gender filtering (AI search)
+    - idx_user_fullname: Index for name searches
+    - idx_user_gender_name: Composite index for combined gender + name queries
+    - idx_user_created: Index for sorting by creation date
+
+Validation:
+    Model-level validation catches invalid data before it reaches the database:
+    - username: 3-50 chars, alphanumeric + underscore only
+    - full_name: 2-255 chars, trimmed whitespace
+    - gender: Must be "Male", "Female", or "Other"
+    - password: Cannot be empty (should contain hash, not plain text)
+
+Migration Notes:
+    If adding new columns or constraints to existing tables, see the
+    MIGRATION NOTES section at the bottom of this file for SQL commands.
+"""
+
 from sqlalchemy import Column, Integer, String, DateTime, Index, event, CheckConstraint
-from sqlalchemy.sql import func
-from sqlalchemy.orm import validates
-from database import Base
-import re
+from sqlalchemy.sql import func      # SQL functions like NOW()
+from sqlalchemy.orm import validates # Validator decorator
+from database import Base            # SQLAlchemy declarative base
+import re                            # Regular expressions for validation
 
 # ==============================================================================
 # USER MODEL

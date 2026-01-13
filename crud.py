@@ -1,16 +1,75 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import func
-from passlib.context import CryptContext
-from typing import List, Optional
-import models, schemas
-import logging
+"""
+crud.py - Database CRUD Operations
+
+This module provides Create, Read, Update, Delete operations for the User model.
+It acts as a data access layer between the API endpoints and the database.
+
+Why Use a CRUD Module?
+    - Separates database logic from route handlers
+    - Centralizes error handling and logging
+    - Makes it easy to test database operations
+    - Provides consistent patterns for all models
+
+Operations Provided:
+    CREATE:
+        - create_user(): Create new user with password hashing
+
+    READ:
+        - get_user(): Get user by ID
+        - get_user_by_username(): Get user by username (case-insensitive)
+        - get_users(): Get paginated list of users
+        - get_users_by_gender(): Get users filtered by gender
+        - search_users_by_name(): Search users by name pattern
+        - get_user_count(): Get total user count
+        - username_exists(): Check if username is taken
+
+    UPDATE:
+        - update_user(): Update user fields (password optional)
+
+    DELETE:
+        - delete_user(): Delete single user
+        - bulk_delete_users(): Delete multiple users efficiently
+
+    AUTHENTICATION:
+        - authenticate_user(): Verify username/password (for future login)
+        - verify_password(): Check password against hash
+        - get_password_hash(): Hash a plain text password
+
+Password Security:
+    This module uses Argon2 for password hashing, which is:
+    - Winner of the Password Hashing Competition
+    - Memory-hard (resistant to GPU/ASIC attacks)
+    - Time-configurable (can increase difficulty over time)
+    - Timing-safe verification (resistant to timing attacks)
+
+Error Handling:
+    All functions include comprehensive error handling:
+    - ValueError: Validation errors (returned to user)
+    - IntegrityError: Database constraint violations
+    - SQLAlchemyError: General database errors
+    - All errors are logged with relevant context
+"""
+
+from sqlalchemy.orm import Session                    # Database session type
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # Database exceptions
+from sqlalchemy import func                           # SQL functions (lower, count)
+from passlib.context import CryptContext              # Password hashing
+from typing import List, Optional                     # Type hints
+import models   # SQLAlchemy models
+import schemas  # Pydantic schemas
+import logging  # Application logging
 
 # ==============================================================================
 # LOGGING SETUP
 # ==============================================================================
 
 logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# CONSTANTS
+# ==============================================================================
+
+DATABASE_ERROR_MSG = "Database error occurred"
 
 # ==============================================================================
 # PASSWORD HASHING CONFIGURATION
