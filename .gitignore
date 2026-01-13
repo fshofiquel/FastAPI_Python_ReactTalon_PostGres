@@ -1,6 +1,7 @@
 /uploads/
 /.env
 /.output.txt
+/query_cache.json
 /test_ai_edge_cases.py
 /tmpclaude-1ebc-cwd
 /tmpclaude-3d61-cwd
