@@ -85,10 +85,10 @@ if not DATABASE_URL.startswith(("postgresql://", "postgres://")):
 try:
     # Extract host info for logging
     db_info = DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'unknown'
-    print(f"✅ Database configuration validated")
+    print(t"✅ Database configuration validated")
     print(f"📊 Connecting to: {db_info}")
 except Exception:
-    print(f"✅ Database URL configured")
+    print(t"✅ Database URL configured")
 
 # ==============================================================================
 # ENGINE CONFIGURATION

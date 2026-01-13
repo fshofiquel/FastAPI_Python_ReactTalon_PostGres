@@ -178,7 +178,7 @@ class User(Base):
             raise ValueError("Username must be at most 50 characters long")
         
         # Check for valid characters (alphanumeric + underscore only)
-        if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        if not re.match(r'^\w+$', username):
             raise ValueError(
                 "Username can only contain letters, numbers, and underscores. "
                 "No spaces or special characters allowed."

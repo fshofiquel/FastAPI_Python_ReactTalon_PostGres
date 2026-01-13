@@ -528,9 +528,8 @@ def _detect_name_length_parity(query_lower: str) -> Optional[str]:
             return "odd"
 
     # Check for "even"
-    if 'even' in query_lower:
-        if has_length_word or 'name' in query_lower:
-            return "even"
+    if 'even' in query_lower and (has_length_word or 'name' in query_lower):
+        return "even"
 
     return None
 

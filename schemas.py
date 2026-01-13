@@ -56,7 +56,7 @@ class UserBase(BaseModel):
     @validator('username')
     def validate_username(cls, v):
         """Validate username format"""
-        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+        if not re.match(r'^\w+$', v):
             raise ValueError('Username can only contain letters, numbers, and underscores')
         return v.strip()
     

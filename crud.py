@@ -376,7 +376,7 @@ def create_user(
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")
-        raise RuntimeError("Database error occurred")
+        raise RuntimeError(DATABASE_ERROR_MSG)
         
     except Exception as e:
         db.rollback()
@@ -464,7 +464,7 @@ def update_user(
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating user {user_id}: {e}")
-        raise RuntimeError("Database error occurred")
+        raise RuntimeError(DATABASE_ERROR_MSG)
         
     except Exception as e:
         db.rollback()
@@ -509,7 +509,7 @@ def delete_user(db: Session, user_id: int) -> Optional[models.User]:
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting user {user_id}: {e}")
-        raise RuntimeError("Database error occurred")
+        raise RuntimeError(DATABASE_ERROR_MSG)
         
     except Exception as e:
         db.rollback()

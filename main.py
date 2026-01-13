@@ -77,6 +77,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
+# CONSTANTS
+# ==============================================================================
+
+INTERNAL_SERVER_MSG_ERROR = "Internal server error"
+
+# ==============================================================================
 # APPLICATION SETUP
 # ==============================================================================
 
@@ -335,7 +341,7 @@ async def runtime_error_handler(request: Request, exc: RuntimeError):
     logger.error(f"Runtime error: {exc}")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"}
+        content={"detail": INTERNAL_SERVER_MSG_ERROR}
     )
 
 # ==============================================================================
@@ -568,7 +574,7 @@ async def create_user(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating user: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_MSG_ERROR)
 
 @app.get(
     "/users/",
@@ -680,7 +686,7 @@ async def update_user(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating user: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_MSG_ERROR)
 
 @app.delete(
     "/users/{user_id}",
@@ -730,7 +736,7 @@ async def delete_user(
         raise
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_MSG_ERROR)
 
 # ==============================================================================
 # STARTUP & SHUTDOWN EVENTS
