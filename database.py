@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # Find and load .env file
 env_file = find_dotenv()
 if not env_file:
-    print("❌ ERROR: No .env file found in project directory")
+    print("[ERROR] No .env file found in project directory")
     print("Please create a .env file with the following variables:")
     print("  DATABASE_URL=postgresql://username:password@localhost:5432/database_name")
     print("\nExample .env file:")
@@ -58,7 +58,7 @@ if not env_file:
     sys.exit(1)
 
 load_dotenv(env_file)
-print(f"✅ Loaded environment from: {env_file}")
+print(f"[OK] Loaded environment from: {env_file}")
 
 # ==============================================================================
 # DATABASE URL VALIDATION
@@ -66,7 +66,7 @@ print(f"✅ Loaded environment from: {env_file}")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    print("❌ ERROR: DATABASE_URL not set in .env file")
+    print("[ERROR] DATABASE_URL not set in .env file")
     print("\nYour .env file must contain:")
     print("  DATABASE_URL=postgresql://username:password@localhost:5432/database_name")
     print("\nExample:")
@@ -75,7 +75,7 @@ if not DATABASE_URL:
 
 # Validate DATABASE_URL format
 if not DATABASE_URL.startswith(("postgresql://", "postgres://")):
-    print("❌ ERROR: DATABASE_URL must start with 'postgresql://' or 'postgres://'")
+    print("[ERROR] DATABASE_URL must start with 'postgresql://' or 'postgres://'")
     print(f"Current value: {DATABASE_URL}")
     print("\nCorrect format:")
     print("  postgresql://username:password@host:port/database_name")
@@ -85,10 +85,10 @@ if not DATABASE_URL.startswith(("postgresql://", "postgres://")):
 try:
     # Extract host info for logging
     db_info = DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'unknown'
-    print(t"✅ Database configuration validated")
-    print(f"📊 Connecting to: {db_info}")
+    print("[OK] Database configuration validated")
+    print(f"[INFO] Connecting to: {db_info}")
 except Exception:
-    print(t"✅ Database URL configured")
+    print("[OK] Database URL configured")
 
 # ==============================================================================
 # ENGINE CONFIGURATION
@@ -113,7 +113,7 @@ if ENVIRONMENT == "production":
             "options": "-c statement_timeout=30000"  # 30 second query timeout
         }
     )
-    logger.info("🚀 Production database engine initialized")
+    logger.info("Production database engine initialized")
     
 elif ENVIRONMENT == "testing":
     # Testing configuration with verbose logging
@@ -125,7 +125,7 @@ elif ENVIRONMENT == "testing":
         pool_pre_ping=True,
         echo=True,  # Log all SQL for debugging
     )
-    logger.info("🧪 Testing database engine initialized")
+    logger.info("Testing database engine initialized")
     
 else:
     # Development with moderate pooling and SQL logging
@@ -141,7 +141,7 @@ else:
             "connect_timeout": 10,
         }
     )
-    logger.info("🔧 Development database engine initialized")
+    logger.info("Development database engine initialized")
 
 # ==============================================================================
 # CONNECTION EVENT LISTENERS
@@ -150,17 +150,17 @@ else:
 @event.listens_for(engine, "connect")
 def receive_connect(dbapi_conn, connection_record):
     """Log when new database connections are established"""
-    logger.debug("📡 New database connection established")
+    logger.debug("New database connection established")
 
 @event.listens_for(engine, "checkout")
 def receive_checkout(dbapi_conn, connection_record, connection_proxy):
     """Log when connections are checked out from pool"""
-    logger.debug("🔄 Connection checked out from pool")
+    logger.debug("Connection checked out from pool")
 
 @event.listens_for(engine, "checkin")
 def receive_checkin(dbapi_conn, connection_record):
     """Log when connections are returned to pool"""
-    logger.debug("↩️  Connection returned to pool")
+    logger.debug("Connection returned to pool")
 
 # ==============================================================================
 # SESSION CONFIGURATION
@@ -197,7 +197,7 @@ def get_db():
     try:
         yield db
     except Exception as e:
-        logger.error(f"❌ Database session error: {e}")
+        logger.error(f"Database session error: {e}")
         db.rollback()
         raise
     finally:
@@ -221,10 +221,10 @@ def check_database_health() -> bool:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        logger.info("✅ Database health check passed")
+        logger.info("Database health check passed")
         return True
     except Exception as e:
-        logger.error(f"❌ Database health check failed: {e}")
+        logger.error(f"Database health check failed: {e}")
         return False
 
 # ==============================================================================
@@ -254,10 +254,10 @@ def get_pool_stats() -> dict:
 # Verify database connection on import
 try:
     if check_database_health():
-        print("✅ Database connection successful!")
+        print("[OK] Database connection successful!")
     else:
-        print("⚠️  Warning: Database health check failed")
+        print("[WARN] Warning: Database health check failed")
         print("   Make sure PostgreSQL is running and credentials are correct")
 except Exception as e:
-    print(f"⚠️  Warning: Could not verify database connection: {e}")
+    print(f"[WARN] Warning: Could not verify database connection: {e}")
     print("   The application may not work correctly")

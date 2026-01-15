@@ -105,7 +105,7 @@ User Query: "find ladies w/ pics beginning w J"
 │  ├─ Layer 1: Redis (fastest)         │
 │  ├─ Layer 2: In-Memory Dict          │
 │  └─ Layer 3: File (query_cache.json) │
-│                                      
+│                                      │
 │  Cache Hit? → Skip to Step 5         │
 │  Cache Miss? → Continue to Step 3    │
 └──────────────┬───────────────────────┘
@@ -258,16 +258,38 @@ npm start
 
 ```
 FastAPI_Python_ReactTalon_PostGres/
-├── main.py              # FastAPI application & routes
-├── database.py          # Database configuration & pooling
-├── models.py            # SQLAlchemy models
-├── schemas.py           # Pydantic schemas
-├── crud.py              # Database operations
-├── ai.py                # AI search, normalization & caching
+├── main.py              # FastAPI application entry point (~180 lines)
+├── config.py            # Centralized application configuration
+├── database.py          # Database configuration & connection pooling
+├── models.py            # SQLAlchemy ORM models
+├── schemas.py           # Pydantic request/response schemas
+├── crud.py              # Database CRUD operations
+│
+├── ai/                  # AI-powered search package
+│   ├── __init__.py      # Package exports
+│   ├── models.py        # Pydantic models (UserRecord, UserQueryFilters)
+│   ├── cache.py         # Multi-layer caching (Redis/memory/file)
+│   ├── llm.py           # Ollama LLM integration
+│   ├── detectors.py     # Query pattern detection functions
+│   ├── query_parser.py  # Query parsing orchestration
+│   └── db_queries.py    # AI search database operations
+│
+├── routers/             # API route handlers
+│   ├── __init__.py      # Router exports
+│   ├── users.py         # User CRUD endpoints
+│   ├── ai_endpoints.py  # AI search endpoints
+│   └── health.py        # Health check endpoints
+│
+├── utils/               # Utility functions
+│   ├── __init__.py      # Utility exports
+│   ├── file_handlers.py # File upload validation/processing
+│   └── validators.py    # Input validation helpers
+│
+├── uploads/             # User profile pictures
+├── query_cache.json     # AI search cache (auto-generated)
 ├── .env                 # Environment variables
 ├── .env.example         # Environment template
 ├── pyproject.toml       # Python dependencies (uv)
-├── uploads/             # User profile pictures
 │
 ├── frontend/
 │   ├── src/
@@ -278,9 +300,20 @@ FastAPI_Python_ReactTalon_PostGres/
 │   ├── .env                 # Frontend config
 │   └── public/              # Static assets
 │
-├── README.md                # This file
-└── query_cache.json         # AI search cache (auto-generated)
+├── ARCHITECTURE.md      # System architecture documentation
+├── DEPLOYMENT.md        # Deployment guide
+└── README.md            # This file
 ```
+
+### Module Overview
+
+| Module | Responsibility |
+|--------|----------------|
+| `main.py` | FastAPI app initialization, middleware, router mounting |
+| `config.py` | Environment settings, file limits, constants |
+| `ai/` | AI-powered natural language search package |
+| `routers/` | API endpoint handlers (users, AI, health) |
+| `utils/` | Helper functions (file handling, validation) |
 
 ---
 
@@ -430,7 +463,7 @@ REACT_APP_API_URL=http://localhost:8000
 
 ### File Upload Limits
 
-Configured in `main.py`:
+Configured in `config.py`:
 ```python
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(Remove-Item -Path \"C:\\\\Users\\\\user\\\\Desktop\\\\FastAPI_Python_ReactTalon_PostGres\\\\tmpclaude-*\" -Recurse -Force)"
+    ]
+  }
+}

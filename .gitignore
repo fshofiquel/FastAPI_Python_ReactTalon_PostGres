@@ -3,14 +3,4 @@
 /.output.txt
 /query_cache.json
 /test_ai_edge_cases.py
-/tmpclaude-1ebc-cwd
-/tmpclaude-3d61-cwd
-/tmpclaude-5c3b-cwd
-/tmpclaude-5df1-cwd
-/tmpclaude-581d-cwd
-/tmpclaude-0814-cwd
-/tmpclaude-6992-cwd
-/tmpclaude-a782-cwd
-/tmpclaude-b400-cwd
-/tmpclaude-bb43-cwd
-/tmpclaude-c9ce-cwd
+/test_query_parser.py
