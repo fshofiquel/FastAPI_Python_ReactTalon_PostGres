@@ -60,6 +60,12 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_EMPTY_FILTER_MSG = "Falling back to empty filter"
 
+# String literals used multiple times (SonarQube S1192)
+SORT_SHORTEST = 'shortest'
+SORT_LONGEST = 'longest'
+SORT_NEWEST = 'newest'
+PATTERN_STARTS_WITH = 'starts with'
+
 # ==============================================================================
 # ENVIRONMENT CONFIGURATION
 # ==============================================================================
@@ -393,22 +399,22 @@ def normalize_query(query: str) -> str:
     # parser only needs to handle one version of each concept.
     synonyms = {
         # Starts-with variations -> canonical "starts with"
-        'begin with': 'starts with',
-        'begins with': 'starts with',
+        'begin with': PATTERN_STARTS_WITH,
+        'begins with': PATTERN_STARTS_WITH,
         'beginning with': 'starting with',
-        'start at': 'starts with',
+        'start at': PATTERN_STARTS_WITH,
 
         # Sorting synonyms -> canonical length/date terms
         # "big names" -> "longest names", "small usernames" -> "shortest usernames"
-        'big ': 'longest ',
-        'bigger ': 'longest ',
-        'biggest ': 'longest ',
-        'small ': 'shortest ',
-        'smaller ': 'shortest ',
-        'smallest ': 'shortest ',
-        'recent ': 'newest ',
-        'new ': 'newest ',
-        'latest ': 'newest ',
+        'big ': f'{SORT_LONGEST} ',
+        'bigger ': f'{SORT_LONGEST} ',
+        'biggest ': f'{SORT_LONGEST} ',
+        'small ': f'{SORT_SHORTEST} ',
+        'smaller ': f'{SORT_SHORTEST} ',
+        'smallest ': f'{SORT_SHORTEST} ',
+        'recent ': f'{SORT_NEWEST} ',
+        'new ': f'{SORT_NEWEST} ',
+        'latest ': f'{SORT_NEWEST} ',
         'signups': 'users',  # "recent signups" -> "recent users"
 
         # Gender synonyms -> canonical male/female
@@ -666,7 +672,7 @@ def _detect_unsupported_patterns(query_lower: str) -> list:
 
     # Ends-with filtering
     if 'ends with' in query_lower or 'end with' in query_lower:
-        warnings.append("Ends-with filtering is not supported - use 'contains' or 'starts with' instead")
+        warnings.append(f"Ends-with filtering is not supported - use 'contains' or '{PATTERN_STARTS_WITH}' instead")
 
     # Exact length filtering (e.g., "exactly 5 letters")
     if 'exactly' in words and bool(words & {'letter', 'char', 'character'}):
@@ -678,112 +684,106 @@ def _detect_unsupported_patterns(query_lower: str) -> list:
     return warnings
 
 
-def _detect_sorting(query_lower: str) -> tuple:
-    """
-    Detect sorting preferences from query.
+# Sorting keyword sets (module-level for reuse and reduced complexity)
+_LONGEST_WORDS = frozenset({SORT_LONGEST, 'long', 'biggest', 'big', 'most characters'})
+_SHORTEST_WORDS = frozenset({SORT_SHORTEST, 'short', 'smallest', 'small', 'fewest', 'least'})
+_NEWEST_WORDS = frozenset({SORT_NEWEST, 'most recent', 'recently created', 'latest', 'recent'})
+_OLDEST_WORDS = frozenset({'oldest', 'first created', 'earliest'})
+_ALPHA_ASC_WORDS = frozenset({'alphabetical', 'a-z', 'a to z', 'a–z'})
+_ALPHA_DESC_WORDS = frozenset({'reverse alphabetical', 'z-a', 'z to a', 'z–a'})
 
-    Supports multiple sorting types:
-    - Length-based: "longest name", "shortest username", "big names", "small usernames"
-    - Date-based: "newest users", "oldest users", "recent signups", "latest"
-    - Alphabetical: "alphabetical", "a-z", "z-a", "reverse alphabetical"
-    - Explicit: "sort by name", "order by username", "sort by date"
 
-    The function uses keyword sets to match various ways users express sorting intent.
-    For example, "biggest names" and "longest names" both resolve to sort by name_length desc.
-
-    Priority order for ambiguous queries:
-    1. If "username" is mentioned, sort by username (more specific)
-    2. Otherwise, sort by name (more common)
-
-    Returns:
-        tuple: (sort_by, sort_order) where:
-            - sort_by: "name_length", "username_length", "name", "username", "created_at", or None
-            - sort_order: "asc" or "desc"
-
-    Examples:
-        "longest names" -> ("name_length", "desc")
-        "shortest usernames" -> ("username_length", "asc")
-        "newest users" -> ("created_at", "desc")
-        "alphabetical" -> ("name", "asc")
-        "sort by username" -> ("username", "asc")
-    """
-    words = query_lower.split()
-
-    # ===========================================================================
-    # Keyword sets for detecting sort preferences
-    # ===========================================================================
-    # Each set contains various ways users might express the same sorting intent.
-    # After normalization, synonyms like "big" -> "longest" are already handled,
-    # but we keep expanded sets here for queries that bypass normalization.
-    longest_words = {'longest', 'long', 'biggest', 'big', 'most characters'}
-    shortest_words = {'shortest', 'short', 'smallest', 'small', 'fewest', 'least'}
-    newest_words = {'newest', 'most recent', 'recently created', 'latest', 'recent'}
-    oldest_words = {'oldest', 'first created', 'earliest'}
-    alpha_asc_words = {'alphabetical', 'a-z', 'a to z', 'a–z'}  # Note: includes en-dash variant
-    alpha_desc_words = {'reverse alphabetical', 'z-a', 'z to a', 'z–a'}
-
-    # Determine what field to sort by: username is more specific, name is default
-    has_username = 'username' in query_lower or 'usernames' in query_lower
-    has_name = 'name' in query_lower or 'names' in query_lower
-
-    # ===========================================================================
-    # Length-based sorting (longest/shortest)
-    # ===========================================================================
-    has_longest = any(word in query_lower for word in longest_words)
-    has_shortest = any(word in query_lower for word in shortest_words)
+def _detect_length_sorting(query_lower: str, words: list, has_username: bool, has_name: bool) -> Optional[tuple]:
+    """Detect length-based sorting (longest/shortest)."""
+    has_longest = any(word in query_lower for word in _LONGEST_WORDS)
+    has_shortest = any(word in query_lower for word in _SHORTEST_WORDS)
 
     if has_longest:
-        if has_username:
-            return "username_length", "desc"
-        # "first" implies first name, which relates to name length
-        if has_name or 'first' in words:
-            return "name_length", "desc"
+        field = "username_length" if has_username else "name_length"
+        if has_username or has_name or 'first' in words:
+            return field, "desc"
 
     if has_shortest:
-        if has_username:
-            return "username_length", "asc"
-        if has_name or 'first' in words:
-            return "name_length", "asc"
+        field = "username_length" if has_username else "name_length"
+        if has_username or has_name or 'first' in words:
+            return field, "asc"
 
-    # ===========================================================================
-    # Date-based sorting (newest/oldest)
-    # ===========================================================================
-    # "signups" implies time-based filtering (recent signups = newest users)
-    if any(word in query_lower for word in newest_words) or 'signups' in query_lower:
+    return None
+
+
+def _detect_date_sorting(query_lower: str) -> Optional[tuple]:
+    """Detect date-based sorting (newest/oldest)."""
+    if any(word in query_lower for word in _NEWEST_WORDS) or 'signups' in query_lower:
         return "created_at", "desc"
-    if any(word in query_lower for word in oldest_words):
+    if any(word in query_lower for word in _OLDEST_WORDS):
         return "created_at", "asc"
+    return None
 
-    # ===========================================================================
-    # Alphabetical sorting (a-z / z-a)
-    # ===========================================================================
-    if any(word in query_lower for word in alpha_desc_words):
-        if has_username:
-            return "username", "desc"
-        return "name", "desc"
-    if any(word in query_lower for word in alpha_asc_words):
+
+def _detect_alpha_sorting(query_lower: str, has_username: bool, has_name: bool) -> Optional[tuple]:
+    """Detect alphabetical sorting (a-z / z-a)."""
+    if any(word in query_lower for word in _ALPHA_DESC_WORDS):
+        return ("username", "desc") if has_username else ("name", "desc")
+
+    if any(word in query_lower for word in _ALPHA_ASC_WORDS):
         if has_username:
             return "username", "asc"
         if has_name:
             return "name", "asc"
 
-    # ===========================================================================
-    # Explicit "sort by X" / "order by X" pattern
-    # ===========================================================================
-    # Handle queries like "users sort by name" or "order by created date"
-    if 'sort' in words or 'order' in words:
-        if 'by' in words:
-            by_idx = words.index('by')
-            if by_idx + 1 < len(words):
-                sort_field = words[by_idx + 1]
-                if sort_field in {'username', 'usernames'}:
-                    return "username", "asc"
-                if sort_field in {'name', 'names'}:
-                    return "name", "asc"
-                if sort_field in {'date', 'created', 'time'}:
-                    return "created_at", "desc"
+    return None
 
-    # No sorting detected - return None with default descending order
+
+def _detect_explicit_sort(words: list) -> Optional[tuple]:
+    """Detect explicit 'sort by X' / 'order by X' pattern."""
+    if not (('sort' in words or 'order' in words) and 'by' in words):
+        return None
+
+    by_idx = words.index('by')
+    if by_idx + 1 >= len(words):
+        return None
+
+    sort_field = words[by_idx + 1]
+    field_map = {
+        'username': ("username", "asc"),
+        'usernames': ("username", "asc"),
+        'name': ("name", "asc"),
+        'names': ("name", "asc"),
+        'date': ("created_at", "desc"),
+        'created': ("created_at", "desc"),
+        'time': ("created_at", "desc"),
+    }
+    return field_map.get(sort_field)
+
+
+def _detect_sorting(query_lower: str) -> tuple:
+    """
+    Detect sorting preferences from query.
+
+    Returns:
+        tuple: (sort_by, sort_order) where sort_by can be None
+    """
+    words = query_lower.split()
+    has_username = 'username' in query_lower or 'usernames' in query_lower
+    has_name = 'name' in query_lower or 'names' in query_lower
+
+    # Try each sorting type in priority order
+    result = _detect_length_sorting(query_lower, words, has_username, has_name)
+    if result:
+        return result
+
+    result = _detect_date_sorting(query_lower)
+    if result:
+        return result
+
+    result = _detect_alpha_sorting(query_lower, has_username, has_name)
+    if result:
+        return result
+
+    result = _detect_explicit_sort(words)
+    if result:
+        return result
+
     return None, "desc"
 
 
@@ -890,104 +890,86 @@ def _detect_name_length_parity(query_lower: str) -> Optional[str]:
     return None
 
 
+# Gender detection constants
+_FEMALE_WORDS = frozenset({'female', 'woman', 'women', 'lady', 'ladies'})
+_MALE_WORDS = frozenset({'male', 'guy', 'guys', 'man', 'men'})
+_FEMALE_TYPOS = frozenset({'fmale', 'femal', 'femails', 'femail'})
+_NAME_PREFIXES = frozenset({'named', 'called', 'name'})
+
+
+def _is_name_not_gender(gender_word: str, words: list) -> bool:
+    """Check if a gender word is actually a name (preceded by 'named', 'called', etc.)."""
+    if gender_word not in words:
+        return False
+    idx = words.index(gender_word)
+    return idx > 0 and words[idx - 1] in _NAME_PREFIXES
+
+
+def _detect_other_gender(query_lower: str, words: list) -> Optional[tuple]:
+    """Detect 'Other' gender (non-binary, other gender, etc.)."""
+    if 'other gender' in query_lower or 'other-gender' in query_lower:
+        return "Other", None
+    if 'non-binary' in query_lower or 'non binary' in query_lower or 'nonbinary' in query_lower:
+        return "Other", None
+    if 'nb' in words:
+        return "Other", "Interpreted as 'non-binary'"
+    return None
+
+
+def _detect_female_gender(query_lower: str, words: list) -> Optional[tuple]:
+    """Detect female gender from query."""
+    if _is_name_not_gender('female', words):
+        return None
+
+    # Check for female words
+    if any(word in words for word in _FEMALE_WORDS) or 'female' in query_lower:
+        return "Female", None
+
+    # Check for typos (only if 'male' is not a separate word)
+    if any(typo in query_lower for typo in _FEMALE_TYPOS) and 'male' not in words:
+        return "Female", "Interpreted as 'female' (possible typo corrected)"
+
+    return None
+
+
+def _detect_male_gender(words: list) -> Optional[tuple]:
+    """Detect male gender from query."""
+    if _is_name_not_gender('male', words):
+        return None
+    if any(word in words for word in _MALE_WORDS):
+        return "Male", None
+    return None
+
+
 def _detect_gender(query_lower: str) -> tuple:
     """
     Detect gender filter from query.
 
-    This function handles various ways users express gender filtering, including:
-    - Formal terms: "male", "female", "other"
-    - Informal terms: "guys", "ladies", "men", "women"
-    - Non-binary variants: "non-binary", "nonbinary", "nb"
-    - Common typos: "fmale", "femal", "femails"
-
-    Special handling:
-    - "users named Male" should search for name "Male", NOT filter by male gender
-    - "female" is checked before "male" to prevent "female" matching the "male" substring
-    - "Other gender" phrase takes priority over individual word matching
-
     Returns:
-        tuple: (gender, warning) where:
-            - gender: "Male", "Female", "Other", or None
-            - warning: Optional message about interpretation (e.g., typo correction)
-
-    Examples:
-        "female users" -> ("Female", None)
-        "show guys" -> ("Male", None)
-        "non-binary users" -> ("Other", None)
-        "users named female" -> (None, None)  # "female" is a name here
-        "fmale users" -> ("Female", "Interpreted as 'female' (possible typo corrected)")
+        tuple: (gender, warning) where gender is "Male", "Female", "Other", or None
     """
     words = query_lower.split()
 
-    # ===========================================================================
-    # Helper: Check if a gender word is actually a name, not a filter
-    # ===========================================================================
-    # Queries like "users named Male" or "find user called Female" should search
-    # for users with that name, not filter by gender. We check if the gender word
-    # is preceded by "named", "called", or "name" to detect this pattern.
-    def is_name_not_gender(gender_word: str) -> bool:
-        if gender_word not in words:
-            return False
-        idx = words.index(gender_word)
-        if idx > 0 and words[idx - 1] in {'named', 'called', 'name'}:
-            return True
-        return False
+    # Check Other gender first (highest priority)
+    result = _detect_other_gender(query_lower, words)
+    if result:
+        return result
 
-    # ===========================================================================
-    # Check for "Other" gender FIRST
-    # ===========================================================================
-    # Must check "other gender" phrase before individual words to correctly handle
-    # queries like "other gender users called female" (should filter by Other gender,
-    # not Female, even though "female" appears in the query).
-    if 'other gender' in query_lower or 'other-gender' in query_lower:
-        return "Other", None
+    # Check Female before Male (female contains "male" as substring)
+    result = _detect_female_gender(query_lower, words)
+    if result:
+        return result
 
-    # Non-binary detection (maps to "Other" in our system)
-    if 'non-binary' in query_lower or 'non binary' in query_lower or 'nonbinary' in query_lower:
-        return "Other", None
-    # "nb" as shorthand for non-binary (with warning for transparency)
-    if 'nb' in words:
-        return "Other", "Interpreted as 'non-binary'"
+    # Check Male
+    result = _detect_male_gender(words)
+    if result:
+        return result
 
-    # ===========================================================================
-    # Check for Female gender
-    # ===========================================================================
-    # IMPORTANT: Check female BEFORE male because "female" contains "male" as substring.
-    # If we check male first, "female" would match "male" and return wrong result.
-    if not is_name_not_gender('female'):
-        # Exact matches
-        if 'female' in query_lower or 'woman' in words or 'women' in words:
-            return "Female", None
-        # Informal terms (after normalization, "ladies" might still appear)
-        if 'lady' in words or 'ladies' in words:
-            return "Female", None
-
-        # Typo correction for common female misspellings
-        # Only apply if "male" is not a separate word (to avoid "fmale" + "male" confusion)
-        female_typos = ['fmale', 'femal', 'femails', 'femail']
-        if any(typo in query_lower for typo in female_typos) and 'male' not in words:
-            return "Female", "Interpreted as 'female' (possible typo corrected)"
-
-    # ===========================================================================
-    # Check for Male gender
-    # ===========================================================================
-    # Use exact word match ('male' in words) to avoid matching "female"
-    if not is_name_not_gender('male'):
-        if 'male' in words:
-            return "Male", None
-        # Informal terms
-        if 'guy' in words or 'guys' in words or 'man' in words or 'men' in words:
-            return "Male", None
-
-    # ===========================================================================
-    # Fallback: "Other" gender for ambiguous patterns
-    # ===========================================================================
-    # Handle queries like "other users" or "show other gender"
-    if not is_name_not_gender('other'):
+    # Fallback: "other" with context
+    if not _is_name_not_gender('other', words):
         if 'other' in words and ('gender' in query_lower or 'user' in query_lower):
             return "Other", None
 
-    # No gender filter detected
     return None, None
 
 
@@ -1028,179 +1010,185 @@ def _find_letter_after_with(words: list) -> Optional[str]:
     return None
 
 
+# Name search pattern constants
+_STARTS_WITH_PATTERNS = frozenset([PATTERN_STARTS_WITH, 'starting with', 'begins with', 'beginning with',
+                                    'begin with', 'start with', 'start at', 'starting letter'])
+_FILTER_WORDS = frozenset({'female', 'male', 'other', 'newest', 'oldest', 'latest', 'recent',
+                            SORT_LONGEST, SORT_SHORTEST, 'with', 'without', 'no', 'user', 'users'})
+_COMMAND_WORDS = frozenset({'find', 'show', 'list', 'get', 'search', 'display', 'give', 'fetch',
+                             'all', 'the', 'users', 'user', 'people', 'person', 'names', 'name'})
+_ARTICLES = frozenset({'a', 'an', 'the', 'that', 'is'})
+_SORTING_WORDS = frozenset({'oldest', SORT_NEWEST, SORT_LONGEST, SORT_SHORTEST, 'with', 'without'})
+
+
+def _detect_show_x_names(words: list) -> Optional[tuple]:
+    """Pattern 1: 'show X names' - single letter before 'names'."""
+    if 'names' not in words or len(words) < 2:
+        return None
+    names_idx = words.index('names')
+    if names_idx >= 1:
+        prev_word = words[names_idx - 1]
+        if len(prev_word) == 1 and prev_word.isalpha():
+            return prev_word.upper(), True
+    return None
+
+
+def _find_letter_after_pattern(words: list, pattern_words: list) -> Optional[str]:
+    """Find a single letter that appears after a pattern in words."""
+    for i, word in enumerate(words):
+        if word != pattern_words[0]:
+            continue
+        next_idx = i + len(pattern_words)
+        if next_idx < len(words):
+            next_word = words[next_idx]
+            if len(next_word) == 1 and next_word.isalpha():
+                return next_word.upper()
+    return None
+
+
+def _detect_starts_with_pattern(query_lower: str, words: list) -> Optional[tuple]:
+    """Pattern 2: 'starts with X' variants."""
+    for pattern in _STARTS_WITH_PATTERNS:
+        if pattern not in query_lower:
+            continue
+        letter = _find_letter_after_with(words)
+        if letter:
+            return letter, True
+        result = _find_letter_after_pattern(words, pattern.split())
+        if result:
+            return result, True
+    return None
+
+
+def _detect_letter_in_name(words: list) -> Optional[tuple]:
+    """Pattern 3: 'letter X in name'."""
+    if 'letter' not in words:
+        return None
+    letter_idx = words.index('letter')
+    if letter_idx + 1 >= len(words):
+        return None
+    next_word = words[letter_idx + 1]
+    if len(next_word) == 1 and next_word.isalpha():
+        if 'name' in words[letter_idx:] or 'names' in words[letter_idx:]:
+            return next_word.upper(), False
+    return None
+
+
+def _detect_containing_pattern(words: list) -> Optional[tuple]:
+    """Pattern 4: 'containing X'."""
+    if 'containing' not in words:
+        return None
+    idx = words.index('containing')
+    if idx + 1 >= len(words):
+        return None
+    next_word = words[idx + 1]
+    if len(next_word) == 1 and next_word.isalpha():
+        return next_word.upper(), False
+    if next_word not in _ARTICLES:
+        return _capitalize_name(next_word), False
+    return None
+
+
+def _detect_name_like_pattern(words: list) -> Optional[tuple]:
+    """Pattern 5: 'name like X'."""
+    if 'like' not in words:
+        return None
+    idx = words.index('like')
+    if idx > 0 and 'name' in words[:idx] and idx + 1 < len(words):
+        next_word = words[idx + 1]
+        if next_word not in _ARTICLES:
+            return _capitalize_name(next_word), False
+    return None
+
+
+def _detect_named_called_pattern(query_lower: str) -> Optional[tuple]:
+    """Pattern 6: 'named X' / 'called X'."""
+    excluded = {'that', 'is', 'of', 'which', 'who', 'a', 'an', 'the',
+                'users', 'user', 'people', 'all', 'me'}
+    name = _extract_word_after(query_lower, ['named', 'called'], excluded)
+    if name and name.lower() not in _SORTING_WORDS:
+        return _capitalize_name(name), False
+    return None
+
+
+def _detect_show_name_filter(words: list) -> Optional[tuple]:
+    """Pattern 7: 'show/find X <filter>'."""
+    if len(words) < 3 or words[0] not in {'show', 'find'}:
+        return None
+    potential_name = words[1]
+    if potential_name not in _FILTER_WORDS and potential_name[0].isalpha():
+        if words[2] in _FILTER_WORDS:
+            return _capitalize_name(potential_name), False
+    return None
+
+
+def _detect_name_users_pattern(words: list) -> Optional[tuple]:
+    """Pattern 8: 'X users'."""
+    if len(words) < 2 or words[-1] not in {'users', 'user'}:
+        return None
+    potential_name = words[0]
+    cmd_words = {'find', 'show', 'list', 'get', 'search', 'display', 'give', 'fetch',
+                 'all', 'the', 'female', 'male', 'other', SORT_NEWEST, 'oldest'}
+    excluded = {SORT_NEWEST, 'oldest', 'female', 'male', 'other'}
+    if potential_name not in cmd_words and potential_name[0].isalpha():
+        if potential_name not in excluded:
+            return _capitalize_name(potential_name), False
+    return None
+
+
+def _detect_name_filter_pattern(words: list, gender: Optional[str]) -> Optional[tuple]:
+    """Pattern 9: Name at start followed by filter."""
+    if len(words) < 2:
+        return None
+    first_word = words[0]
+    filter_words = {'female', 'male', 'other', SORT_NEWEST, 'oldest', 'latest', 'recent',
+                    SORT_LONGEST, SORT_SHORTEST, 'with', 'without', 'no'}
+    if first_word not in _COMMAND_WORDS and first_word[0].isalpha():
+        if words[1] in filter_words or gender is not None:
+            return _capitalize_name(first_word), False
+    return None
+
+
+def _detect_with_name_pattern(query_lower: str, gender: Optional[str], has_profile_pic: Optional[bool]) -> Optional[tuple]:
+    """Pattern 10: 'with X' for name (when gender set, no pic filter)."""
+    if not gender or has_profile_pic is not None:
+        return None
+    excluded_with = {'a', 'an', 'the', 'that', 'is', 'of', 'odd', 'even',
+                     'profile', 'pic', 'picture', 'photo', 'avatar'}
+    name = _extract_word_after(query_lower, ['with'], excluded_with)
+    if name:
+        return _capitalize_name(name), False
+    return None
+
+
 def _detect_name_search(query_lower: str, gender: Optional[str], has_profile_pic: Optional[bool]) -> tuple:
     """
     Detect name search patterns from query.
 
-    This is one of the most complex detection functions because users express
-    name searches in many different ways. The function handles:
-
-    1. Starts-with patterns: "starts with J", "beginning with A", "show J names"
-    2. Contains patterns: "containing John", "name like Adam", "letter E in name"
-    3. Explicit naming: "named Taylor", "called John", "user Adam"
-    4. Implicit naming: "Adam female" (name + filter), "Adam users"
-
-    The function returns both the name/letter to search for AND whether it's
-    a "starts with" search (prefix match) or a "contains" search (substring match).
-
-    Args:
-        query_lower: Lowercase query string
-        gender: Detected gender filter (used for "name + filter" pattern detection)
-        has_profile_pic: Detected profile pic filter (to avoid "with" ambiguity)
-
     Returns:
-        tuple: (name_substr, starts_with_mode) where:
-            - name_substr: The name or letter to search for, or None
-            - starts_with_mode: True for prefix match, False for substring match
-
-    Examples:
-        "users starting with J" -> ("J", True)
-        "names containing Adam" -> ("Adam", False)
-        "user named Taylor" -> ("Taylor", False)
-        "Adam female users" -> ("Adam", False)
-        "show J names" -> ("J", True)
+        tuple: (name_substr, starts_with_mode)
     """
     words = query_lower.split()
 
-    # ===========================================================================
-    # Pattern 1: "show X names" - e.g., "show J names" means names starting with J
-    # ===========================================================================
-    # This pattern is common for single-letter searches where the letter precedes "names"
-    if 'names' in words and len(words) >= 2:
-        names_idx = words.index('names')
-        if names_idx >= 1:
-            prev_word = words[names_idx - 1]
-            if len(prev_word) == 1 and prev_word.isalpha():
-                return prev_word.upper(), True
+    # Try each pattern in priority order
+    patterns = [
+        lambda: _detect_show_x_names(words),
+        lambda: _detect_starts_with_pattern(query_lower, words),
+        lambda: _detect_letter_in_name(words),
+        lambda: _detect_containing_pattern(words),
+        lambda: _detect_name_like_pattern(words),
+        lambda: _detect_named_called_pattern(query_lower),
+        lambda: _detect_show_name_filter(words),
+        lambda: _detect_name_users_pattern(words),
+        lambda: _detect_name_filter_pattern(words, gender),
+        lambda: _detect_with_name_pattern(query_lower, gender, has_profile_pic),
+    ]
 
-    # ===========================================================================
-    # Pattern 2: "starts with X" / "begins with X" variants
-    # ===========================================================================
-    # All variations that indicate a prefix search (name should START with the letter/string)
-    starts_with_patterns = ['starts with', 'starting with', 'begins with', 'beginning with',
-                            'begin with', 'start with', 'start at', 'starting letter']
-    for pattern in starts_with_patterns:
-        if pattern in query_lower:
-            # Try the helper function first
-            letter = _find_letter_after_with(words)
-            if letter:
-                return letter, True
-            # Fallback: try to find letter directly after the pattern
-            pattern_words = pattern.split()
-            for i, word in enumerate(words):
-                if word == pattern_words[0] and i + len(pattern_words) < len(words):
-                    next_word = words[i + len(pattern_words)]
-                    if len(next_word) == 1 and next_word.isalpha():
-                        return next_word.upper(), True
+    for pattern_func in patterns:
+        result = pattern_func()
+        if result:
+            return result
 
-    # ===========================================================================
-    # Pattern 3: "letter X in name" - e.g., "users with letter e in their name"
-    # ===========================================================================
-    # This is a CONTAINS search (not starts-with) for a single letter
-    if 'letter' in words:
-        letter_idx = words.index('letter')
-        if letter_idx + 1 < len(words):
-            next_word = words[letter_idx + 1]
-            if len(next_word) == 1 and next_word.isalpha():
-                # Verify "name" appears somewhere after to confirm context
-                if 'name' in words[letter_idx:] or 'names' in words[letter_idx:]:
-                    return next_word.upper(), False
-
-    # ===========================================================================
-    # Pattern 4: "containing X" - extract word after "containing"
-    # ===========================================================================
-    # Explicit contains/substring search
-    if 'containing' in words:
-        idx = words.index('containing')
-        if idx + 1 < len(words):
-            next_word = words[idx + 1]
-            # Single letters are valid search terms (e.g., "names containing a")
-            if len(next_word) == 1 and next_word.isalpha():
-                return next_word.upper(), False
-            # Skip articles but accept actual names
-            if next_word not in {'a', 'an', 'the', 'that', 'is'}:
-                return _capitalize_name(next_word), False
-
-    # ===========================================================================
-    # Pattern 5: "name like X" - SQL-style LIKE pattern
-    # ===========================================================================
-    # Some users familiar with SQL might use "like" for substring matching
-    if 'like' in words:
-        idx = words.index('like')
-        # Only if "name" appears before "like" to establish context
-        if idx > 0 and 'name' in words[:idx] and idx + 1 < len(words):
-            next_word = words[idx + 1]
-            if next_word not in {'a', 'an', 'the', 'that', 'is'}:
-                return _capitalize_name(next_word), False
-
-    # ===========================================================================
-    # Pattern 6: "named X" / "called X" - explicit name specification
-    # ===========================================================================
-    # Most explicit way to search for a name. Note: we intentionally allow
-    # gender words here because someone might actually be named "Male" or "Female"
-    excluded = {'that', 'is', 'of', 'which', 'who', 'a', 'an', 'the',
-                'users', 'user', 'people', 'all', 'me'}
-    name = _extract_word_after(query_lower, ['named', 'called'], excluded)
-    if name:
-        # Only exclude sorting words (oldest, newest, etc.) - not gender words
-        if name.lower() not in {'oldest', 'newest', 'longest', 'shortest', 'with', 'without'}:
-            return _capitalize_name(name), False
-
-    # ===========================================================================
-    # Pattern 7: "show/find X <filter>" - name followed by filter keywords
-    # ===========================================================================
-    # Handles normalized queries like "show Adam female" (find females named Adam)
-    if len(words) >= 3 and words[0] in {'show', 'find'}:
-        potential_name = words[1]
-        filter_words = {'female', 'male', 'other', 'newest', 'oldest', 'latest', 'recent',
-                        'longest', 'shortest', 'with', 'without', 'no', 'user', 'users'}
-        # If second word isn't a filter and third word IS a filter, second word is a name
-        if potential_name not in filter_words and potential_name[0].isalpha():
-            if words[2] in filter_words:
-                return _capitalize_name(potential_name), False
-
-    # ===========================================================================
-    # Pattern 8: "X users" - name at start followed by "users"
-    # ===========================================================================
-    # Handles "Adam users" meaning "search for users named Adam"
-    if len(words) >= 2 and words[-1] in {'users', 'user'}:
-        potential_name = words[0]
-        command_words = {'find', 'show', 'list', 'get', 'search', 'display', 'give', 'fetch',
-                         'all', 'the', 'female', 'male', 'other', 'newest', 'oldest'}
-        if potential_name not in command_words and potential_name[0].isalpha():
-            if potential_name not in {'newest', 'oldest', 'female', 'male', 'other'}:
-                return _capitalize_name(potential_name), False
-
-    # ===========================================================================
-    # Pattern 9: Name at start followed by any filter
-    # ===========================================================================
-    # Catches "Adam female", "Adam newest", etc. where name comes first
-    if len(words) >= 2:
-        first_word = words[0]
-        command_words = {'find', 'show', 'list', 'get', 'search', 'display', 'give', 'fetch',
-                         'all', 'the', 'users', 'user', 'people', 'person', 'names', 'name'}
-        filter_words = {'female', 'male', 'other', 'newest', 'oldest', 'latest', 'recent',
-                        'longest', 'shortest', 'with', 'without', 'no'}
-
-        # First word looks like a name (not a command) and second is a filter
-        if first_word not in command_words and first_word[0].isalpha():
-            if words[1] in filter_words or (gender is not None):
-                return _capitalize_name(first_word), False
-
-    # ===========================================================================
-    # Pattern 10: "with X" for name (only when gender is set, no pic filter)
-    # ===========================================================================
-    # Handles "female with Taylor" meaning "female users whose name contains Taylor"
-    # Only applies when there's a gender filter and no profile pic filter (to avoid
-    # confusion with "with profile picture")
-    if gender and has_profile_pic is None:
-        excluded_with = {'a', 'an', 'the', 'that', 'is', 'of', 'odd', 'even',
-                         'profile', 'pic', 'picture', 'photo', 'avatar'}
-        name = _extract_word_after(query_lower, ['with'], excluded_with)
-        if name:
-            return _capitalize_name(name), False
-
-    # No name search pattern detected
     return None, False
 
 

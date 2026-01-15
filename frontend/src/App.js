@@ -28,6 +28,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import PropTypes from "prop-types";  // Runtime type checking for React props
 import axios from "axios";  // HTTP client for API requests
 import "./App.css";         // Tailwind CSS styles
 
@@ -41,7 +42,8 @@ import "./App.css";         // Tailwind CSS styles
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+// Use Set for O(1) lookup performance when checking file types (SonarQube S7776)
+const ALLOWED_FILE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const USERS_PER_PAGE = 50;
 
 // Gender badge colors
@@ -67,7 +69,7 @@ const AVATAR_COLORS = {
  * @returns {string|null} Error message or null if valid
  */
 function validateFile(file) {
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    if (!ALLOWED_FILE_TYPES.has(file.type)) {
         return "Invalid file type. Please upload JPEG, PNG, GIF, or WebP";
     }
     if (file.size > MAX_FILE_SIZE) {
@@ -107,58 +109,80 @@ function createEmptyFormData() {
 /**
  * Alert message component for errors and success notifications.
  */
-function AlertMessage({ type, title, message }) {
+function AlertMessage({ type, message }) {
     const styles = {
         error: "bg-red-50 border-l-4 border-red-500 text-red-700",
         success: "bg-green-50 border-l-4 border-green-500 text-green-700"
     };
     const icons = { error: "Warning", success: "Success" };
+    const emoji = type === "error" ? "⚠️" : "✓";
 
     return (
         <div className={`${styles[type]} p-4 mb-4 rounded-lg animate-slideDown`}>
-            <p className="font-medium">{type === "error" ? "⚠️" : "✓"} {icons[type]}</p>
+            <p className="font-medium">{emoji} {icons[type]}</p>
             <p className="text-sm mt-1">{message}</p>
         </div>
     );
 }
 
+AlertMessage.propTypes = {
+    type: PropTypes.oneOf(['error', 'success']).isRequired,
+    message: PropTypes.string.isRequired
+};
+
 /**
  * Search info display showing filters, warnings, and result counts.
  */
 function SearchInfo({ searchInfo, usersPerPage }) {
-    if (!searchInfo) return null;
+    if (searchInfo === null || searchInfo === undefined) return null;
+
+    const userLabel = searchInfo.total === 1 ? 'user' : 'users';
+    const showPageInfo = searchInfo.total > usersPerPage;
 
     return (
         <div className="mt-2 space-y-1">
             <div className="text-sm text-gray-600">
-                Found {searchInfo.total.toLocaleString()} matching user{searchInfo.total !== 1 ? 's' : ''}
-                {searchInfo.total > usersPerPage && ` (showing ${searchInfo.count} per page)`}
+                Found {searchInfo.total.toLocaleString()} matching {userLabel}
+                {showPageInfo && ` (showing ${searchInfo.count} per page)`}
             </div>
 
             {searchInfo.filters_applied && (
                 <div className="text-xs text-blue-600">
                     Filters: {Object.entries(searchInfo.filters_applied)
-                        .map(([key, val]) => `${key.replace(/_/g, ' ')}: ${val}`)
+                        .map(([key, val]) => `${key.replaceAll('_', ' ')}: ${val}`)
                         .join(' | ')}
                 </div>
             )}
 
-            {searchInfo.parse_warnings?.length > 0 && (
+            {searchInfo.parse_warnings && searchInfo.parse_warnings.length > 0 && (
                 <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                    {searchInfo.parse_warnings.map((warning, idx) => (
-                        <div key={idx}>Note: {warning}</div>
+                    {searchInfo.parse_warnings.map((warning) => (
+                        <div key={warning}>Note: {warning}</div>
                     ))}
                 </div>
             )}
 
             {searchInfo.query_understood === false && (
                 <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                    Your query couldn't be fully understood. Try: "female users", "users named John", "users starting with A", or "users with odd letters in name"
+                    Your query couldn&apos;t be fully understood. Try: &quot;female users&quot;, &quot;users named John&quot;, &quot;users starting with A&quot;, or &quot;users with odd letters in name&quot;
                 </div>
             )}
         </div>
     );
 }
+
+SearchInfo.propTypes = {
+    searchInfo: PropTypes.shape({
+        count: PropTypes.number,
+        total: PropTypes.number,
+        message: PropTypes.string,
+        has_more: PropTypes.bool,
+        query_understood: PropTypes.bool,
+        parse_warnings: PropTypes.arrayOf(PropTypes.string),
+        filters_applied: PropTypes.object
+    }),
+    usersPerPage: PropTypes.number.isRequired
+};
 
 /**
  * Gender badge component.
@@ -171,6 +195,10 @@ function GenderBadge({ gender }) {
         </span>
     );
 }
+
+GenderBadge.propTypes = {
+    gender: PropTypes.oneOf(['Male', 'Female', 'Other']).isRequired
+};
 
 /**
  * User table row component.
@@ -205,6 +233,104 @@ function UserRow({ user, avatarSrc, onEdit, onDelete }) {
         </tr>
     );
 }
+
+UserRow.propTypes = {
+    user: PropTypes.shape({
+        id: PropTypes.number.isRequired,
+        full_name: PropTypes.string.isRequired,
+        username: PropTypes.string.isRequired,
+        gender: PropTypes.oneOf(['Male', 'Female', 'Other']).isRequired,
+        profile_pic: PropTypes.string
+    }).isRequired,
+    avatarSrc: PropTypes.string.isRequired,
+    onEdit: PropTypes.func.isRequired,
+    onDelete: PropTypes.func.isRequired
+};
+
+/**
+ * Pagination Controls Component
+ *
+ * Renders navigation buttons for paginated results:
+ * - First page button (⟨⟨)
+ * - Previous page button (⟨ Prev)
+ * - Current page indicator
+ * - Next page button (Next ⟩)
+ * - Last page button (⟩⟩)
+ *
+ * Also shows "Showing X to Y of Z users" info.
+ */
+function PaginationControls({
+    currentPage,
+    totalPages,
+    totalUsers,
+    usersPerPage,
+    hasPrevPage,
+    hasNextPage,
+    isLoading,
+    onGoToPage
+}) {
+    const startItem = ((currentPage - 1) * usersPerPage) + 1;
+    const endItem = Math.min(currentPage * usersPerPage, totalUsers);
+
+    return (
+        <div className="mt-6 flex items-center justify-between border-t pt-4">
+            <div className="text-sm text-gray-600">
+                Showing {startItem} to {endItem} of {totalUsers.toLocaleString()} users
+            </div>
+
+            <div className="flex gap-2">
+                <button
+                    onClick={() => onGoToPage(1)}
+                    disabled={!hasPrevPage || isLoading}
+                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    ⟨⟨
+                </button>
+                <button
+                    onClick={() => onGoToPage(currentPage - 1)}
+                    disabled={!hasPrevPage || isLoading}
+                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    ⟨ Prev
+                </button>
+
+                <div className="px-4 py-2 border rounded-lg bg-blue-50 text-blue-700 font-medium">
+                    Page {currentPage} of {totalPages.toLocaleString()}
+                </div>
+
+                <button
+                    onClick={() => onGoToPage(currentPage + 1)}
+                    disabled={!hasNextPage || isLoading}
+                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    Next ⟩
+                </button>
+                <button
+                    onClick={() => onGoToPage(totalPages)}
+                    disabled={!hasNextPage || isLoading}
+                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    ⟩⟩
+                </button>
+            </div>
+
+            <div className="text-sm text-gray-600">
+                {totalPages.toLocaleString()} pages
+            </div>
+        </div>
+    );
+}
+
+PaginationControls.propTypes = {
+    currentPage: PropTypes.number.isRequired,
+    totalPages: PropTypes.number.isRequired,
+    totalUsers: PropTypes.number.isRequired,
+    usersPerPage: PropTypes.number.isRequired,
+    hasPrevPage: PropTypes.bool.isRequired,
+    hasNextPage: PropTypes.bool.isRequired,
+    isLoading: PropTypes.bool.isRequired,
+    onGoToPage: PropTypes.func.isRequired
+};
 
 // ==============================================================================
 // MAIN APPLICATION COMPONENT
@@ -298,8 +424,10 @@ function App() {
      * This effect handles pagination for both normal browsing and search results.
      * When currentPage changes, it determines whether to fetch normal users
      * or search results based on whether there's an active search query.
+     *
+     * Note: We intentionally only depend on currentPage, not activeSearchQuery.
+     * Adding activeSearchQuery would cause double-fetching when search is triggered.
      */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (activeSearchQuery) {
             // User has an active search - paginate search results
@@ -308,6 +436,7 @@ function App() {
             // No search active - show normal user list
             fetchUsers(currentPage);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage]);
 
     /**
@@ -516,7 +645,9 @@ function App() {
      * @param {Object} user - User object to delete
      */
     const handleDelete = async (user) => {
-        if (!window.confirm(`Delete user "${user.username}"?`)) {
+        // eslint-disable-next-line no-restricted-globals
+        const confirmed = confirm(`Delete user "${user.username}"?`);
+        if (!confirmed) {
             return;
         }
 
@@ -647,69 +778,9 @@ function App() {
     const goToPage = (page) => {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page);
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // Smooth scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
-
-    /**
-     * Pagination Controls Component
-     *
-     * Renders navigation buttons for paginated results:
-     * - First page button (⟨⟨)
-     * - Previous page button (⟨ Prev)
-     * - Current page indicator
-     * - Next page button (Next ⟩)
-     * - Last page button (⟩⟩)
-     *
-     * Also shows "Showing X to Y of Z users" info.
-     */
-    const PaginationControls = () => (
-        <div className="mt-6 flex items-center justify-between border-t pt-4">
-            <div className="text-sm text-gray-600">
-                Showing {((currentPage - 1) * USERS_PER_PAGE) + 1} to {Math.min(currentPage * USERS_PER_PAGE, totalUsers)} of {totalUsers.toLocaleString()} users
-            </div>
-
-            <div className="flex gap-2">
-                <button
-                    onClick={() => goToPage(1)}
-                    disabled={!hasPrevPage || isLoading}
-                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    ⟨⟨
-                </button>
-                <button
-                    onClick={() => goToPage(currentPage - 1)}
-                    disabled={!hasPrevPage || isLoading}
-                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    ⟨ Prev
-                </button>
-
-                <div className="px-4 py-2 border rounded-lg bg-blue-50 text-blue-700 font-medium">
-                    Page {currentPage} of {totalPages.toLocaleString()}
-                </div>
-
-                <button
-                    onClick={() => goToPage(currentPage + 1)}
-                    disabled={!hasNextPage || isLoading}
-                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    Next ⟩
-                </button>
-                <button
-                    onClick={() => goToPage(totalPages)}
-                    disabled={!hasNextPage || isLoading}
-                    className="px-3 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    ⟩⟩
-                </button>
-            </div>
-
-            <div className="text-sm text-gray-600">
-                {totalPages.toLocaleString()} pages
-            </div>
-        </div>
-    );
 
     // ==============================================================================
     // RENDER
@@ -804,7 +875,10 @@ function App() {
                                 disabled={isLoading}
                                 className="bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-lg"
                             >
-                                {isLoading ? "Saving..." : (editingUser ? "Update User" : "Create User")}
+                                {/* Extract nested ternary for readability (SonarQube S3358) */}
+                                {isLoading && "Saving..."}
+                                {!isLoading && editingUser && "Update User"}
+                                {!isLoading && !editingUser && "Create User"}
                             </button>
                             <button
                                 type="button"
@@ -831,7 +905,7 @@ function App() {
                         <button
                             onClick={handleSearch}
                             disabled={isSearching}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition"
                         >
                             {isSearching ? "Searching..." : "Search"}
                         </button>
@@ -872,12 +946,16 @@ function App() {
                         </span>
                     </h2>
 
-                    {isLoading && users.length === 0 ? (
+                    {/* Loading state - only show when loading AND no cached users */}
+                    {isLoading && users.length === 0 && (
                         <div className="text-center py-8">
                             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                             <p className="text-gray-600 mt-2">Loading...</p>
                         </div>
-                    ) : users.length > 0 ? (
+                    )}
+
+                    {/* Users table - show when we have users (even while loading more) */}
+                    {users.length > 0 && (
                         <>
                             <div className="overflow-x-auto">
                                 <table className="min-w-full">
@@ -891,25 +969,42 @@ function App() {
                                     </tr>
                                     </thead>
                                     <tbody>
-                                    {users.map((user) => (
-                                        <UserRow
-                                            key={user.id}
-                                            user={user}
-                                            avatarSrc={user.profile_pic
-                                                ? `${API_URL}/${user.profile_pic}`
-                                                : generateInitialsImage(user.full_name, user.gender)}
-                                            onEdit={handleEdit}
-                                            onDelete={handleDelete}
-                                        />
-                                    ))}
+                                    {users.map((user) => {
+                                        const avatarSrc = user.profile_pic
+                                            ? `${API_URL}/${user.profile_pic}`
+                                            : generateInitialsImage(user.full_name, user.gender);
+                                        return (
+                                            <UserRow
+                                                key={user.id}
+                                                user={user}
+                                                avatarSrc={avatarSrc}
+                                                onEdit={handleEdit}
+                                                onDelete={handleDelete}
+                                            />
+                                        );
+                                    })}
                                     </tbody>
                                 </table>
                             </div>
 
                             {/* Pagination Controls - show for both normal browse and search */}
-                            {totalPages > 1 && <PaginationControls />}
+                            {totalPages > 1 && (
+                                <PaginationControls
+                                    currentPage={currentPage}
+                                    totalPages={totalPages}
+                                    totalUsers={totalUsers}
+                                    usersPerPage={USERS_PER_PAGE}
+                                    hasPrevPage={hasPrevPage}
+                                    hasNextPage={hasNextPage}
+                                    isLoading={isLoading}
+                                    onGoToPage={goToPage}
+                                />
+                            )}
                         </>
-                    ) : (
+                    )}
+
+                    {/* Empty state - only show when not loading AND no users */}
+                    {!isLoading && users.length === 0 && (
                         <div className="text-center py-8 text-gray-500">
                             <p className="text-lg">No users found</p>
                         </div>

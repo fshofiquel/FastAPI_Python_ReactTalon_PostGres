@@ -28,7 +28,7 @@
 
 /* Default placeholder for users without profile pics */
 .placeholder-avatar {
-  background-color: #9CA3AF; /* Tailwind gray-400 */
+  background-color: #6B7280; /* Tailwind gray-500 - meets WCAG AA contrast (4.6:1) */
   color: white;
   font-weight: bold;
   display: flex;
