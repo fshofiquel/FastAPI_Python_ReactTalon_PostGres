@@ -53,7 +53,12 @@ from typing import Optional, Dict, Any  # Type hints
 import magic  # python-magic for reliable MIME type detection (not just file extension)
 
 # Local application modules
-from ai import chat_completion, filter_records_ai  # AI search functionality
+# AI module provides natural language search capabilities:
+# - chat_completion: Direct AI chat for testing
+# - filter_records_ai: Main search function that parses queries and filters users
+# - clear_all_caches: Utility to clear all query caches (in-memory, Redis, file)
+# - close_http_client: Cleanup function to close persistent HTTP connections on shutdown
+from ai import chat_completion, filter_records_ai, clear_all_caches, close_http_client
 import models   # SQLAlchemy database models
 import schemas  # Pydantic request/response schemas
 import crud     # Database CRUD operations
@@ -437,6 +442,56 @@ async def test_ai(
             detail=f"AI service error: {str(e)}"
         )
 
+# ==============================================================================
+# Cache Management Endpoint
+# ==============================================================================
+# This endpoint allows clearing all AI query caches. This is useful when:
+# - Query parsing logic has been updated (cached results may be stale)
+# - Testing new query patterns without cached interference
+# - Debugging cache-related issues
+# - Resetting the system to a clean state during development
+
+@app.post(
+    "/ai/cache/clear",
+    tags=["AI", "System"],
+    summary="Clear AI query cache",
+    description="Clear all cached query results to force fresh parsing"
+)
+async def clear_ai_cache():
+    """
+    Clear all AI query caches (in-memory, Redis, and file).
+
+    This endpoint clears all three cache layers:
+    1. In-memory cache: Python dict, fastest, cleared immediately
+    2. Redis cache: Distributed cache (if available), keys with "query:*" prefix
+    3. File cache: Persistent JSON file (query_cache.json)
+
+    Returns statistics about what was cleared:
+    - in_memory: Number of entries removed from memory
+    - redis: Number of Redis keys deleted
+    - file: Boolean indicating if file cache was cleared
+
+    Example response:
+        {"status": "success", "cleared": {"in_memory": 150, "redis": 75, "file": true}}
+
+    Use cases:
+    - After updating query parsing logic to invalidate stale cached results
+    - During development to test query parsing without cache interference
+    - Troubleshooting when cached results don't match expected behavior
+    """
+    try:
+        result = clear_all_caches()
+        return {
+            "status": "success",
+            "cleared": result
+        }
+    except Exception as e:
+        logger.error(f"Cache clear failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear cache: {str(e)}"
+        )
+
 @app.get(
     "/ai/search",
     tags=["AI", "Users"],
@@ -757,5 +812,24 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup resources on application shutdown"""
+    """
+    Cleanup resources on application shutdown.
+
+    This function is called automatically by FastAPI when the server is stopping.
+    It ensures all resources are properly released to prevent:
+    - Connection leaks (HTTP clients, database connections)
+    - Resource warnings in logs
+    - Delayed process termination
+    - Data loss (caches are saved via atexit in ai.py)
+
+    The close_http_client() call is critical for the persistent HTTP client
+    introduced for performance optimization. Without proper cleanup, the client's
+    connections would remain open until the OS forcibly closes them.
+    """
     logger.info("👋 Application shutting down")
+
+    # Close the persistent HTTP client used for AI API calls.
+    # This releases the connection pool and any keep-alive connections.
+    # The ai.py module uses a single persistent client for better performance
+    # (avoids TCP/TLS handshake overhead on each request).
+    await close_http_client()
