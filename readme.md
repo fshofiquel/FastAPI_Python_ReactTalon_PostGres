@@ -4,7 +4,7 @@ A full-stack user management application with natural language search powered by
 
 ![Python](https://img.shields.io/badge/Python-3.14+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
-![React](https://img.shields.io/badge/React-18+-blue)
+![React](https://img.shields.io/badge/React-19+-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
@@ -78,7 +78,7 @@ A full-stack user management application with natural language search powered by
 └───────────┘      └───────────┘      └───────────┘
 ```
 
-### 🤖 AI Search Architecture
+### 🤖 AI Search Architecture (3-Tier Processing)
 
 ```
 User Query: "find ladies w/ pics beginning w J"
@@ -101,44 +101,60 @@ User Query: "find ladies w/ pics beginning w J"
 └──────────────┬───────────────────────┘
                ↓
 ┌──────────────────────────────────────┐
-│  2. Triple-Layer Cache Check         │
+│  TIER 1: Triple-Layer Cache Check    │
 │  ├─ Layer 1: Redis (fastest)         │
 │  ├─ Layer 2: In-Memory Dict          │
 │  └─ Layer 3: File (query_cache.json) │
 │                                      │
-│  Cache Hit? → Skip to Step 5         │
-│  Cache Miss? → Continue to Step 3    │
+│  Cache Hit? → Skip to Step 6         │
+│  Cache Miss? → Continue to Tier 2    │
 └──────────────┬───────────────────────┘
                ↓
 ┌──────────────────────────────────────┐
-│  3. AI Processing (Ollama LLM)       │
+│  TIER 2: Pattern Matching            │
+│  • Check exact pattern dictionary    │
+│  • Detect gender (female/male/other) │
+│  • Detect sorting (longest/newest)   │
+│  • Detect profile pic (with/without) │
+│  • Detect name patterns (starts with)│
+│  • Detect bare names ("Adam")        │
+│                                      │
+│  Pattern Match? → Skip to Step 5     │
+│  No Match? → Continue to Tier 3      │
+│  (Handles 80%+ of common queries!)   │
+└──────────────┬───────────────────────┘
+               ↓
+┌──────────────────────────────────────┐
+│  TIER 3: AI Processing (Ollama LLM)  │
 │  • Send normalized query to AI       │
 │  • AI returns structured JSON:       │
 │    {                                 │
 │      "gender": "Female",             │
-│      "name_substr": "Taylor",        │
-│      "starts_with_mode": false       │
+│      "name_substr": "J",             │
+│      "starts_with_mode": true,       │
+│      "has_profile_pic": true         │
 │    }                                 │
 │  • Validate and clean response       │
 └──────────────┬───────────────────────┘
                ↓
 ┌──────────────────────────────────────┐
-│  4. Cache the Result                 │
+│  5. Cache the Result                 │
 │  • Store filters in all 3 layers     │
 │  • Next similar query = instant      │
 └──────────────┬───────────────────────┘
                ↓
 ┌──────────────────────────────────────┐
-│  5. Build SQL Query                  │
+│  6. Build SQL Query                  │
 │  • Convert filters to SQL:           │
 │    SELECT * FROM users               │
 │    WHERE gender = 'Female'           │
-│    AND full_name ILIKE '%Taylor%'    │
+│    AND full_name ILIKE 'J%'          │
+│    AND profile_pic IS NOT NULL       │
 │    LIMIT 20                          │
 └──────────────┬───────────────────────┘
                ↓
 ┌──────────────────────────────────────┐
-│  6. Execute Query                    │
+│  7. Execute Query                    │
 │  • Use async connection pool         │
 │  • Return results to user            │
 └──────────────────────────────────────┘
@@ -300,8 +316,7 @@ FastAPI_Python_ReactTalon_PostGres/
 │   ├── .env                 # Frontend config
 │   └── public/              # Static assets
 │
-├── ARCHITECTURE.md      # System architecture documentation
-├── DEPLOYMENT.md        # Deployment guide
+├── DOCUMENTATION.md     # Comprehensive project documentation
 └── README.md            # This file
 ```
 
@@ -512,7 +527,7 @@ open http://localhost:8000/docs
 curl "http://localhost:8000/ai/search?query=female%20users"
 
 # Complex search
-curl "http://localhost:8000/ai/search?query=female%20users%20named%20Taylor&batch_size=50"
+curl "http://localhost:8000/ai/search?query=female%20users%20named%20Taylor&limit=50"
 ```
 
 ### Test Caching

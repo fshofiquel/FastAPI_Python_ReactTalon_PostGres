@@ -60,30 +60,30 @@ This is an **AI-Powered User Management System** that allows administrators to m
 ### 1.2 Architecture Diagram
 
 ```
+┌────────────────────────────────────────────────────────────────┐
+│                       FRONTEND (React)                         │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  - User List with Pagination (50/page)                   │  │
+│  │  - User Form (Create/Edit with file upload)              │  │
+│  │  - AI-Powered Natural Language Search Bar                │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────┘
+                           ↕ HTTP (Axios)
 ┌─────────────────────────────────────────────────────────────────┐
-│                       FRONTEND (React)                          │
+│                     FASTAPI BACKEND                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ /users (CRUD)   │  │ /ai (Search)    │  │ /health         │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+│                           ↕                                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  - User List with Pagination (50/page)                   │   │
-│  │  - User Form (Create/Edit with file upload)              │   │
-│  │  - AI-Powered Natural Language Search Bar                │   │
+│  │  AI Module (3-Tier Query Processing)                     │   │
+│  │  1. Cache Check → 2. Pattern Match → 3. LLM Parse        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                           ↕                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  CRUD Layer (crud.py) - Argon2 Hashing + Validation      │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
-                           ↕ HTTP (Axios)
-┌──────────────────────────────────────────────────────────────────┐
-│                     FASTAPI BACKEND                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
-│  │ /users (CRUD)   │  │ /ai (Search)    │  │ /health         │   │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘   │
-│                           ↕                                      │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  AI Module (3-Tier Query Processing)                     │    │
-│  │  1. Cache Check → 2. Pattern Match → 3. LLM Parse        │    │
-│  └──────────────────────────────────────────────────────────┘    │
-│                           ↕                                      │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  CRUD Layer (crud.py) - Argon2 Hashing + Validation      │    │
-│  └──────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────┘
          ↕ SQL                              ↕ HTTP
 ┌─────────────────┐                ┌─────────────────────────────┐
 │   PostgreSQL    │                │   Ollama LLM API            │
@@ -680,31 +680,31 @@ The AI module is the heart of the natural language search functionality. It uses
 ```
 User Query: "find female users with Taylor"
                     ↓
-┌──────────────────────────────────────────────────────────────┐
-│  TIER 1: CACHE CHECK                                         │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │ 1. Check Redis cache (if available)                     │ │
-│  │ 2. Check in-memory dictionary                           │ │
-│  │ 3. Check file-based JSON cache                          │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│                    ↓ Cache Miss                              │
-├──────────────────────────────────────────────────────────────┤
-│  TIER 2: PATTERN MATCHING                                    │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │ 1. Check exact pattern dictionary                       │ │
-│  │ 2. Normalize query and check patterns again             │ │
-│  │ 3. Use regex-based detection functions                  │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│                    ↓ No Pattern Match                        │
-├──────────────────────────────────────────────────────────────┤
-│  TIER 3: AI PARSING                                          │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │ 1. Send query to Ollama LLM                             │ │
-│  │ 2. Parse JSON response                                  │ │
-│  │ 3. Validate and sanitize fields                         │ │
-│  │ 4. Cache result for future queries                      │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│  TIER 1: CACHE CHECK                                          │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 1. Check Redis cache (if available)                     │  │
+│  │ 2. Check in-memory dictionary                           │  │
+│  │ 3. Check file-based JSON cache                          │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                    ↓ Cache Miss                               │
+├───────────────────────────────────────────────────────────────┤
+│  TIER 2: PATTERN MATCHING                                     │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 1. Check exact pattern dictionary                       │  │
+│  │ 2. Normalize query and check patterns again             │  │
+│  │ 3. Use regex-based detection functions                  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                    ↓ No Pattern Match                         │
+├───────────────────────────────────────────────────────────────┤
+│  TIER 3: AI PARSING                                           │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 1. Send query to Ollama LLM                             │  │
+│  │ 2. Parse JSON response                                  │  │
+│  │ 3. Validate and sanitize fields                         │  │
+│  │ 4. Cache result for future queries                      │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
                             ↓
                   UserQueryFilters object
                             ↓
