@@ -307,13 +307,13 @@ FastAPI_Python_ReactTalon_PostGres/
 
 ### Module Overview
 
-| Module | Responsibility |
-|--------|----------------|
-| `main.py` | FastAPI app initialization, middleware, router mounting |
-| `config.py` | Environment settings, file limits, constants |
-| `ai/` | AI-powered natural language search package |
-| `routers/` | API endpoint handlers (users, AI, health) |
-| `utils/` | Helper functions (file handling, validation) |
+| Module      | Responsibility                                          |
+|-------------|---------------------------------------------------------|
+| `main.py`   | FastAPI app initialization, middleware, router mounting |
+| `config.py` | Environment settings, file limits, constants            |
+| `ai/`       | AI-powered natural language search package              |
+| `routers/`  | API endpoint handlers (users, AI, health)               |
+| `utils/`    | Helper functions (file handling, validation)            |
 
 ---
 
