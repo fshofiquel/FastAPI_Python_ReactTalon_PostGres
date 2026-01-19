@@ -119,6 +119,49 @@ IN_MEMORY_CACHE = load_cache_from_file()
 # ==============================================================================
 
 
+def _to_filters(cached_value) -> UserQueryFilters:
+    """Convert cached value to UserQueryFilters if needed."""
+    if isinstance(cached_value, dict):
+        return UserQueryFilters(**cached_value)
+    return cached_value
+
+
+def _get_from_redis(query: str, normalized: str) -> Optional[UserQueryFilters]:
+    """Try to get cached query from Redis."""
+    if not (USE_REDIS and redis_client):
+        return None
+
+    try:
+        cache_key = f"query:{normalized}"
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            logger.info(f"Redis cache hit for: {query}")
+            filters = UserQueryFilters(**json.loads(cached_data))
+            IN_MEMORY_CACHE[query] = filters
+            return filters
+    except Exception as exc:
+        logger.error(f"Redis get error: {exc}")
+
+    return None
+
+
+def _get_from_memory(query: str, normalized: str) -> Optional[UserQueryFilters]:
+    """Try to get cached query from in-memory cache (exact or normalized)."""
+    # Try exact match
+    if query in IN_MEMORY_CACHE:
+        logger.info(f"In-memory cache hit for: {query}")
+        return _to_filters(IN_MEMORY_CACHE[query])
+
+    # Try normalized match
+    if normalized != query and normalized in IN_MEMORY_CACHE:
+        logger.info(f"Fuzzy cache hit for: {query}")
+        result = _to_filters(IN_MEMORY_CACHE[normalized])
+        IN_MEMORY_CACHE[query] = result
+        return result
+
+    return None
+
+
 def get_cached_query(query: str, normalize_func=None) -> Optional[UserQueryFilters]:
     """
     Retrieve cached query result from all cache layers.
@@ -132,39 +175,17 @@ def get_cached_query(query: str, normalize_func=None) -> Optional[UserQueryFilte
     Returns:
         UserQueryFilters if cached, None otherwise
     """
+    normalized = normalize_func(query) if normalize_func else query
+
     # Try Redis first
-    if USE_REDIS and redis_client:
-        try:
-            normalized = normalize_func(query) if normalize_func else query
-            cache_key = f"query:{normalized}"
-            cached_data = redis_client.get(cache_key)
-            if cached_data:
-                logger.info(f"Redis cache hit for: {query}")
-                filters_dict = json.loads(cached_data)
-                filters = UserQueryFilters(**filters_dict)
-                IN_MEMORY_CACHE[query] = filters
-                return filters
-        except Exception as exc:
-            logger.error(f"Redis get error: {exc}")
+    result = _get_from_redis(query, normalized)
+    if result:
+        return result
 
-    # Try exact match in memory
-    if query in IN_MEMORY_CACHE:
-        logger.info(f"In-memory cache hit for: {query}")
-        cached = IN_MEMORY_CACHE[query]
-        if isinstance(cached, dict):
-            return UserQueryFilters(**cached)
-        return cached
-
-    # Try normalized query if normalize function provided
-    if normalize_func:
-        normalized = normalize_func(query)
-        if normalized in IN_MEMORY_CACHE:
-            logger.info(f"Fuzzy cache hit for: {query}")
-            result = IN_MEMORY_CACHE[normalized]
-            if isinstance(result, dict):
-                result = UserQueryFilters(**result)
-            IN_MEMORY_CACHE[query] = result
-            return result
+    # Try in-memory cache
+    result = _get_from_memory(query, normalized)
+    if result:
+        return result
 
     logger.debug(f"Cache miss for: {query}")
     return None

@@ -34,8 +34,8 @@ _LONGEST_WORDS = frozenset({SORT_LONGEST, 'long', 'biggest', 'big', 'most charac
 _SHORTEST_WORDS = frozenset({SORT_SHORTEST, 'short', 'smallest', 'small', 'fewest', 'least'})
 _NEWEST_WORDS = frozenset({SORT_NEWEST, 'most recent', 'recently created', 'latest', 'recent'})
 _OLDEST_WORDS = frozenset({'oldest', 'first created', 'earliest'})
-_ALPHA_ASC_WORDS = frozenset({'alphabetical', 'a-z', 'a to z', 'a-z'})
-_ALPHA_DESC_WORDS = frozenset({'reverse alphabetical', 'z-a', 'z to a', 'z-a'})
+_ALPHA_ASC_WORDS = frozenset({'alphabetical', 'a-z', 'a to z'})
+_ALPHA_DESC_WORDS = frozenset({'reverse alphabetical', 'z-a', 'z to a'})
 
 # Gender detection constants
 _FEMALE_WORDS = frozenset({'female', 'woman', 'women', 'lady', 'ladies'})
@@ -276,9 +276,8 @@ def detect_name_length_parity(query_lower: str) -> Optional[str]:
     length_words = ['letter', 'character', 'length']
     has_length_word = any(word in query_lower for word in length_words)
 
-    if 'odd' in query_lower:
-        if has_length_word or 'name' in query_lower:
-            return "odd"
+    if 'odd' in query_lower and (has_length_word or 'name' in query_lower):
+        return "odd"
 
     if 'even' in query_lower and (has_length_word or 'name' in query_lower):
         return "even"
