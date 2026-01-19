@@ -141,15 +141,16 @@ def _detect_alpha_sorting(query_lower: str, has_username: bool, has_name: bool) 
     if any(word in query_lower for word in _ALPHA_ASC_WORDS):
         if has_username:
             return "username", "asc"
-        if has_name:
-            return "name", "asc"
+        # Default to name sorting for "alphabetical order" without specific field
+        return "name", "asc"
 
     return None
 
 
 def _detect_explicit_sort(words: list) -> Optional[tuple]:
-    """Detect explicit 'sort by X' / 'order by X' pattern."""
-    if not (('sort' in words or 'order' in words) and 'by' in words):
+    """Detect explicit 'sort by X' / 'order by X' / 'sorted by X' pattern."""
+    has_sort_word = 'sort' in words or 'sorted' in words or 'order' in words or 'ordered' in words
+    if not (has_sort_word and 'by' in words):
         return None
 
     by_idx = words.index('by')
@@ -520,9 +521,14 @@ def _detect_name_users_pattern(words: list) -> Optional[tuple]:
     potential_name = words[0]
     cmd_words = {
         'find', 'show', 'list', 'get', 'search', 'display', 'give', 'fetch',
-        'all', 'the', 'female', 'male', 'other', SORT_NEWEST, 'oldest'
+        'all', 'the', 'female', 'male', 'other', SORT_NEWEST, 'oldest',
+        # Include common typos
+        'fmale', 'femal', 'femails', 'femail',
     }
-    excluded = {SORT_NEWEST, 'oldest', 'female', 'male', 'other'}
+    excluded = {
+        SORT_NEWEST, 'oldest', 'female', 'male', 'other',
+        'fmale', 'femal', 'femails', 'femail',  # typos
+    }
     if potential_name not in cmd_words and potential_name[0].isalpha():
         if potential_name not in excluded:
             return _capitalize_name(potential_name), False
@@ -538,6 +544,14 @@ def _detect_name_filter_pattern(words: list, gender: Optional[str]) -> Optional[
         'female', 'male', 'other', SORT_NEWEST, 'oldest', 'latest', 'recent',
         SORT_LONGEST, SORT_SHORTEST, 'with', 'without', 'no'
     }
+    # Don't treat gender/filter words themselves as names
+    excluded_first_words = {
+        'female', 'male', 'other', 'fmale', 'femal',  # gender words/typos
+        SORT_NEWEST, 'oldest', 'latest', 'recent',  # date sorting
+        SORT_LONGEST, SORT_SHORTEST, 'alphabetical', 'sorted',  # sorting
+    }
+    if first_word in excluded_first_words:
+        return None
     if first_word not in _COMMAND_WORDS and first_word[0].isalpha():
         if words[1] in filter_words or gender is not None:
             return _capitalize_name(first_word), False
@@ -631,6 +645,11 @@ def detect_bare_name(query_lower: str, query_original: str) -> Optional[str]:
         'the', 'and', 'or', 'not',
         'longest', 'shortest', 'oldest', 'newest', 'first', 'last',
         'name', 'named', 'called', 'username', 'picture', 'photo', 'profile',
+        # Sorting words
+        'alphabetical', 'alphabetically', 'sorted', 'sort', 'order', 'ordered',
+        'a-z', 'z-a', 'ascending', 'descending',
+        # Gender words
+        'female', 'male', 'other', 'non-binary', 'nonbinary',
     }
 
     words = query_lower.split()

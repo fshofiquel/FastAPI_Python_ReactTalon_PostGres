@@ -107,6 +107,9 @@ def normalize_query(query: str) -> str:
         'gals': 'female users',
         'ladies': 'female users',
         'gentlemen': 'male users',
+        'non-binary': 'other gender',
+        'nonbinary': 'other gender',
+        'nb ': 'other gender ',
         'avatar': 'profile picture',
         'avatars': 'profile pictures',
         'photo': 'picture',
@@ -300,7 +303,20 @@ def _validate_name_substr(value) -> Optional[str]:
     if not isinstance(value, str):
         return value
     cleaned = value.strip().strip("'\"[]")
-    invalid_values = ["male", "female", "other", "user", "users", "all", "null", "none", ""]
+    # Filter out words that are not actual names
+    invalid_values = {
+        # Gender words
+        "male", "female", "other", "fmale", "femal", "non-binary", "nonbinary",
+        # Command/filter words
+        "user", "users", "all", "null", "none", "",
+        # Sorting words
+        "newest", "oldest", "longest", "shortest", "alphabetical", "sorted",
+        "recent", "latest", "first", "last",
+        # Profile words
+        "profile", "picture", "photo", "avatar", "pic",
+        # Misc
+        "with", "without", "ends", "order",
+    }
     if cleaned.lower() in invalid_values:
         return None
     return cleaned if cleaned else None
