@@ -3,7 +3,6 @@ routers/ai_endpoints.py - AI-Powered Search Endpoints
 
 Endpoints for AI functionality:
 - POST /ai/test: Test AI connection
-- POST /ai/cache/clear: Clear query caches
 - GET /ai/search: AI-powered user search
 """
 
@@ -12,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ai import chat_completion, filter_records_ai, clear_all_caches
+from ai import chat_completion, filter_records_ai
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -44,40 +43,6 @@ async def test_ai(
         )
 
 
-@router.post(
-    "/cache/clear",
-    tags=["System"],
-    summary="Clear AI query cache",
-    description="Clear all cached query results to force fresh parsing"
-)
-async def clear_ai_cache():
-    """
-    Clear all AI query caches (in-memory, Redis, and file).
-
-    This endpoint clears all three cache layers:
-    1. In-memory cache: Python dict, fastest
-    2. Redis cache: Distributed cache (if available)
-    3. File cache: Persistent JSON file
-
-    Use cases:
-    - After updating query parsing logic
-    - During development to test query parsing
-    - Troubleshooting cache-related issues
-    """
-    try:
-        result = clear_all_caches()
-        return {
-            "status": "success",
-            "cleared": result
-        }
-    except Exception as exc:
-        logger.error(f"Cache clear failed: {exc}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to clear cache: {str(exc)}"
-        )
-
-
 @router.get(
     "/search",
     tags=["Users"],
@@ -101,10 +66,6 @@ async def ai_search_users(
             ge=1,
             le=200
         ),
-        enable_ranking: bool = Query(
-            False,
-            description="Enable AI-based result ranking (slower)"
-        ),
         db: Session = Depends(get_db)
 ):
     """
@@ -121,7 +82,7 @@ async def ai_search_users(
     """
     try:
         result = await filter_records_ai(
-            db, query, batch_size=limit, skip=skip, enable_ranking=enable_ranking
+            db, query, batch_size=limit, skip=skip
         )
 
         # Build response message
@@ -135,7 +96,6 @@ async def ai_search_users(
         return {
             "query": query,
             "results": [user.model_dump() for user in result.results],
-            "ranked_ids": result.ranked_ids,
             "count": len(result.results),
             "total": result.total_count,
             "skip": skip,

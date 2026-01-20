@@ -4,7 +4,6 @@ ai/llm.py - LLM Integration for AI-Powered Search
 This module handles all communication with the Ollama LLM API:
 - Persistent HTTP client with connection pooling
 - Chat completion for query parsing
-- Optional AI-based result ranking
 
 Performance Optimization:
     The module uses a persistent HTTP client to avoid TCP/TLS handshake
@@ -12,14 +11,11 @@ Performance Optimization:
 """
 
 import os
-import json
 import logging
-from typing import Optional, List
+from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-
-from ai.models import UserRecord
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +36,6 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 # Creating a new HTTP client for every AI request is slow because:
 #   1. TCP handshake takes ~50-100ms
 #   2. TLS negotiation adds another ~50-100ms
-#   3. HTTP/2 connection setup adds overhead
 #
 # By reusing a single persistent client, we skip connection setup
 # for subsequent requests, saving ~100-200ms per request.
@@ -59,7 +54,6 @@ def get_http_client() -> httpx.AsyncClient:
         - timeout: 60s total, 10s for connection
         - max_keepalive_connections: 5
         - max_connections: 10
-        - http2: Enabled for better multiplexing
 
     Returns:
         httpx.AsyncClient: Configured async HTTP client
@@ -69,7 +63,6 @@ def get_http_client() -> httpx.AsyncClient:
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(60.0, connect=10.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-            http2=True,
         )
     return _http_client
 
@@ -85,6 +78,28 @@ async def close_http_client() -> None:
     if _http_client is not None and not _http_client.is_closed:
         await _http_client.aclose()
         _http_client = None
+
+
+async def warmup_model() -> bool:
+    """
+    Warm up the AI model by sending a simple request at startup.
+
+    This pre-loads the model weights into memory on the Ollama server,
+    avoiding the cold-start delay (model loading from disk) on the
+    first real user request. Note: This does NOT cache prompts or
+    reuse KV pairs - each request still processes the full prompt.
+
+    Returns:
+        bool: True if warmup successful, False otherwise
+    """
+    try:
+        logger.info(f"Warming up AI model: {OLLAMA_MODEL}")
+        await chat_completion("hi", "Reply with just 'ok'")
+        logger.info("AI model warmup complete")
+        return True
+    except Exception as exc:
+        logger.warning(f"AI model warmup failed: {exc}")
+        return False
 
 
 # ==============================================================================
@@ -123,8 +138,9 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     payload = {
         "model": OLLAMA_MODEL,
         "messages": messages,
-        "temperature": 0.0,  # Deterministic responses for caching
+        "temperature": 0.0,
         "top_p": 0.95,
+        "keep_alive": "10m",  # Keep model in memory to avoid reload latency
     }
 
     client = get_http_client()
@@ -135,67 +151,3 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     return data["choices"][0]["message"]["content"]
 
 
-# ==============================================================================
-# AI RANKING (Optional Feature)
-# ==============================================================================
-
-
-async def rank_users_ai(query: str, users: List[UserRecord]) -> List[int]:
-    """
-    Rank users by relevance using AI (optional, slower).
-
-    This function uses the LLM to rank search results by relevance
-    to the original query. It's optional and can be enabled via
-    the enable_ranking parameter in search endpoints.
-
-    Args:
-        query: Original search query
-        users: List of users to rank
-
-    Returns:
-        List of user IDs in order of relevance
-    """
-    if not users or len(users) <= 1:
-        return [u.id for u in users]
-
-    try:
-        system_prompt = """You are a relevance ranker. Output ONLY a JSON array of integers."""
-
-        user_data = [
-            {"id": u.id, "name": u.full_name, "gender": u.gender, "username": u.username}
-            for u in users
-        ]
-
-        user_prompt = f"""Rank these users by relevance to: "{query}"
-
-Users:
-{json.dumps(user_data, indent=2)}
-
-Consider:
-- Name similarity to query
-- Gender match if mentioned
-- Username relevance
-
-Output ONLY a JSON array of user IDs, most relevant first.
-Example: [3, 1, 5, 2, 4]
-
-Your response:"""
-
-        ranking_json = await chat_completion(user_prompt, system_prompt)
-        ranking_json = ranking_json.strip()
-
-        # Extract JSON array
-        start_idx = ranking_json.find('[')
-        end_idx = ranking_json.rfind(']')
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            ranking_json = ranking_json[start_idx:end_idx + 1]
-
-        ranked = json.loads(ranking_json)
-        if isinstance(ranked, list):
-            return [int(x) for x in ranked if isinstance(x, (int, str)) and str(x).isdigit()]
-
-        return [u.id for u in users]
-
-    except Exception as exc:
-        logger.error(f"Ranking error: {exc}")
-        return [u.id for u in users]

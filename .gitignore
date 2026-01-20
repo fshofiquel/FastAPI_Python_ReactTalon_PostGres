@@ -4,3 +4,4 @@
 /query_cache.json
 /test_ai_edge_cases.py
 /test_query_parser.py
+/test_ai_queries.py

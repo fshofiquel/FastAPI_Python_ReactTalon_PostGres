@@ -8,7 +8,7 @@ This module handles all database interactions for AI-powered search:
 - Main filter_records_ai function that orchestrates the search
 
 The module uses SQLAlchemy for database operations and integrates
-with the query parser and LLM ranking modules.
+with the AI query parser module.
 """
 
 import logging
@@ -19,7 +19,6 @@ from sqlalchemy import func
 
 from ai.models import UserRecord, UserQueryFilters, FilteredResult
 from ai.query_parser import parse_query_ai
-from ai.llm import rank_users_ai
 
 logger = logging.getLogger(__name__)
 
@@ -219,48 +218,32 @@ async def filter_records_ai(
         db: Session,
         user_query: str,
         batch_size: int = 20,
-        skip: int = 0,
-        enable_ranking: bool = False
+        skip: int = 0
 ) -> FilteredResult:
     """
     Main function to filter users based on natural language query.
 
     This is the primary entry point for AI-powered search. It:
-    1. Parses the natural language query into filters
+    1. Parses the natural language query into filters using AI
     2. Queries the database with those filters
-    3. Optionally ranks results using AI
 
     Args:
         db: Database session
         user_query: Natural language search query
         batch_size: Maximum number of results per page
         skip: Number of results to skip (for pagination)
-        enable_ranking: Whether to use AI ranking (slower)
 
     Returns:
-        FilteredResult with users, pagination info, and optional ranking
+        FilteredResult with users and pagination info
     """
-    # Parse query
+    # Parse query using AI
     filters = await parse_query_ai(user_query)
 
     # Query database with pagination
     db_results, total_count = query_users(db, filters, limit=batch_size, skip=skip)
 
-    ranked_ids = None
-
-    # Optional AI ranking
-    if enable_ranking and len(db_results) > 1:
-        try:
-            logger.info(f"Ranking {len(db_results)} results...")
-            ranked_ids = await rank_users_ai(user_query, db_results)
-            logger.info("Ranking complete")
-        except Exception as exc:
-            logger.error(f"Ranking failed: {exc}")
-            logger.info("Continuing without ranking...")
-
     return FilteredResult(
         results=db_results,
-        ranked_ids=ranked_ids,
         total_count=total_count,
         query_understood=filters.query_understood,
         parse_warnings=filters.parse_warnings,

@@ -29,8 +29,8 @@ class UserQueryFilters(BaseModel):
     """
     Structured filters extracted from natural language queries.
 
-    The AI parser or simple pattern matcher converts user queries like
-    "show female users named Taylor" into these structured filters.
+    The AI parser converts user queries like "show female users named Taylor"
+    into these structured filters.
 
     Attributes:
         gender: Filter by gender ("Male", "Female", "Other", or None)
@@ -63,14 +63,12 @@ class FilteredResult(BaseModel):
 
     Attributes:
         results: List of matching user records
-        ranked_ids: Optional AI-ranked ordering of result IDs
         total_count: Total matches (for pagination)
         query_understood: Whether the query was successfully parsed
         parse_warnings: Any warnings from parsing
         filters_applied: Human-readable description of applied filters
     """
     results: List[UserRecord]
-    ranked_ids: Optional[List[int]] = None
     total_count: int = 0
     query_understood: bool = True
     parse_warnings: list = []

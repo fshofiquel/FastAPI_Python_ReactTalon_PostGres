@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 import models
 from database import engine, check_database_health
 from config import ENVIRONMENT, UPLOAD_DIR, INTERNAL_SERVER_MSG_ERROR
-from ai import close_http_client
+from ai import close_http_client, warmup_model
 from routers import users_router, ai_router, health_router
 
 # ==============================================================================
@@ -166,6 +166,9 @@ async def startup_event():
     else:
         logger.warning("Database health check failed")
 
+    # Warm up AI model (loads weights into memory, avoids cold-start on first request)
+    await warmup_model()
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -175,7 +178,6 @@ async def shutdown_event():
     Ensures all resources are properly released:
     - HTTP client connections
     - Database connections (handled by SQLAlchemy)
-    - Cache persistence (handled by atexit in ai.cache)
     """
     logger.info("Application shutting down")
     await close_http_client()
