@@ -51,7 +51,7 @@ A full-stack user management application with natural language search powered by
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                      │
+│                        Frontend (React)                     │
 │  • User Interface                                           │
 │  • Form Validation                                          │
 │  • State Management                                         │
@@ -186,7 +186,7 @@ ENVIRONMENT=development
 
 ```bash
 # Install Ollama model
-ollama pull qwen2.5vl:latest
+ollama pull qwen3:1.7b
 
 # Start Ollama server (if not running)
 ollama serve
@@ -511,10 +511,10 @@ ollama serve
 
 # Pull model if not installed
 ollama list  # Check installed models
-ollama pull qwen2.5vl:latest
+ollama pull qwen3:1.7b
 
 # Test model
-ollama run qwen2.5vl:latest "Hello"
+ollama run qwen3:1.7b "Hello"
 
 # Check .env has correct settings
 cat .env | grep OLLAMA
@@ -584,6 +584,10 @@ Total per query:         ~1-3 seconds
 
 **Optimizations implemented:**
 ```
+Thinking Disabled:       Uses native Ollama API with think:false (saves ~30-40s per query)
+Simplified Prompt:       Concise system prompt optimized for 1.7B model attention
+Minimal User Prompt:     Only query + "JSON:" sent per request (schema in system prompt)
+Typo Pre-Processing:     Code-level gender typo correction (deterministic, instant)
 Model Warmup:            Pre-loads model at startup, avoids cold-start delay
 Keep-Alive (10min):      Keeps model weights in memory between requests
 Persistent HTTP Client:  Reuses TCP/TLS connections, saves ~100-200ms per request
@@ -591,9 +595,10 @@ Connection Pooling:      5 keep-alive connections, 10 max connections
 ```
 
 **Important notes:**
+- Uses native Ollama API (`/api/chat`) with `think: false` to disable Qwen3 chain-of-thought reasoning
+- Without `think: false`, the model generates hidden reasoning that takes ~30-45s per query
 - `keep_alive` keeps the model loaded in memory to avoid disk loading latency
 - It does NOT cache prompts or reuse KV pairs - each request processes the full prompt
-- For faster response times, use a local Ollama instance or a smaller model (e.g., qwen3:1.7b)
 
 ### Frontend Performance
 ```
@@ -646,10 +651,11 @@ Form validation:       Real-time on blur
 
 ### AI Security
 - **Prompt injection protection:** AI responses validated and cleaned
-- **JSON validation:** Strict schema enforcement
-- **Fallback behavior:** Returns safe empty filters on AI errors
-- **Rate limiting:** Query normalization reduces AI load
-- **Local inference:** Ollama runs locally (no data sent to cloud)
+- **JSON validation:** Strict schema enforcement on all 7 output fields
+- **Fallback behavior:** Returns safe empty filters on any AI error
+- **Think tag stripping:** Removes Qwen3 `<think>` blocks from responses
+- **Input pre-processing:** Gender typo correction before AI processing
+- **Flexible deployment:** Supports both local and remote Ollama endpoints
 
 ---
 
@@ -786,6 +792,9 @@ Contributions are welcome! Please follow these steps:
 - Simpler architecture with fewer dependencies
 
 **Performance Optimizations:**
+- **Native Ollama API**: Uses `/api/chat` with `think: false` to disable chain-of-thought reasoning
+- **Simplified Prompts**: Concise system prompt and minimal user prompt reduce token processing
+- **Typo Pre-Processing**: Deterministic code-level correction for common gender misspellings
 - **Persistent HTTP Client**: Single client with connection pooling for AI API calls
 - **Connection Reuse**: Eliminates 100-200ms overhead per AI request
 - **Model Warmup**: Pre-loads model at application startup

@@ -172,10 +172,10 @@ models.Base.metadata.create_all(bind=engine)
 
 1. **Install Ollama** from [https://ollama.ai](https://ollama.ai)
 
-2. **Pull a model** (e.g., Mistral):
+2. **Pull a model** (e.g., Qwen3):
 
 ```bash
-ollama pull mistral
+ollama pull qwen3:1.7b
 ```
 
 3. **Start Ollama server:**
@@ -191,7 +191,7 @@ The default endpoint is `http://localhost:11434`.
 ```env
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key_if_required
-OLLAMA_MODEL=mistral
+OLLAMA_MODEL=qwen3:1.7b
 ```
 
 ### 2.5 Frontend Setup
@@ -702,8 +702,17 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
     """
     user_query = user_query.strip()
 
+    # Fix common gender typos before sending to AI
+    # e.g., "fmale" -> "female", "femal" -> "female"
+    words = user_query.split()
+    corrected_words = [_GENDER_TYPOS.get(w.lower(), w) for w in words]
+    user_query = " ".join(corrected_words)
+
+    # Build minimal user prompt (schema is in system prompt)
+    user_prompt = f'"{user_query}"\nJSON:'
+
     # Send to AI for parsing
-    ai_response = await chat_completion(user_query, SYSTEM_PROMPT)
+    ai_response = await chat_completion(user_prompt, SYSTEM_PROMPT)
 
     # Extract and validate JSON from response
     json_str = _extract_json_from_response(ai_response)
@@ -769,15 +778,15 @@ async def warmup_model() -> bool:
         return False
 ```
 
-**Chat Completion with Keep-Alive:**
+**Chat Completion with Native Ollama API:**
 
 ```python
 # ai/llm.py
 
 async def chat_completion(user_input: str, system_prompt: Optional[str] = None) -> str:
-    """Send request to Ollama API for chat completion."""
+    """Send request to Ollama native API for chat completion."""
 
-    url = f"{OLLAMA_BASE_URL.rstrip('/')}/v1/chat/completions"
+    url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat"
     headers = {
         "Authorization": f"Bearer {OLLAMA_API_KEY}",
         "Content-Type": "application/json",
@@ -791,8 +800,12 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     payload = {
         "model": OLLAMA_MODEL,
         "messages": messages,
-        "temperature": 0.0,
-        "top_p": 0.95,
+        "stream": False,
+        "think": False,  # Disable Qwen3 chain-of-thought reasoning
+        "options": {
+            "temperature": 0.0,
+            "top_p": 0.95,
+        },
         "keep_alive": "10m",  # Keep model in memory to avoid reload latency
     }
 
@@ -800,9 +813,23 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     response = await client.post(url, headers=headers, json=payload)
     response.raise_for_status()
     data = response.json()
+    content = data["message"]["content"]
 
-    return data["choices"][0]["message"]["content"]
+    # Strip Qwen3 <think>...</think> blocks if model still emits them
+    content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+
+    return content
 ```
+
+**Key Design Decisions:**
+
+- **Native Ollama API (`/api/chat`)**: Uses Ollama's native endpoint instead of the OpenAI-compatible
+  `/v1/chat/completions`. The native API supports `think: false` to actually disable Qwen3's
+  chain-of-thought reasoning at the generation level, rather than just hiding it in the response.
+- **`think: false`**: Qwen3 models default to generating internal reasoning in `<think>` tags before
+  responding. For structured JSON parsing tasks, this is unnecessary and adds significant latency
+  (30-40+ seconds). Disabling it reduces response times to 1-10 seconds.
+- **`<think>` tag stripping**: Safety net in case the model ignores the `think: false` flag.
 
 **Important Note on `keep_alive`:**
 The `keep_alive` parameter keeps the model weights loaded in memory on the Ollama server. This avoids the disk-to-memory loading time (~5-30 seconds) between requests. However, it does NOT:
@@ -814,28 +841,38 @@ Each request still processes the full prompt from scratch.
 
 **AI Query Parsing Prompt:**
 
+The system prompt is kept intentionally concise to optimize performance on the small 1.7B model.
+Shorter prompts mean less prefill time and better attention to key rules.
+
 ```python
 # ai/query_parser.py - System prompt for LLM
 
-SYSTEM_PROMPT = """You are a query parser that converts natural language to JSON filters.
-Output ONLY valid JSON with no additional text.
+SYSTEM_PROMPT = """Output ONLY valid JSON. No other text.
 
-Rules:
-- gender: Must be exactly "Male", "Female", "Other", or null
-- name_substr: Extract any mentioned name or initial letter
-- starts_with_mode: true ONLY if query says "starts with"
-- name_length_parity: "odd" or "even" for letter count, otherwise null
-- has_profile_pic: true for WITH picture, false for WITHOUT, null otherwise
-- sort_by: "name_length", "username_length", "name", "created_at", or null
-- sort_order: "asc" or "desc"
+Keys: gender, name_substr, starts_with_mode, name_length_parity, has_profile_pic, sort_by, sort_order
+Defaults: null for optional fields, false for starts_with_mode, "desc" for sort_order.
+
+gender: "Male"|"Female"|"Other"|null. ladies/women/gals=Female, guys/men/gentlemen=Male, non-binary=Other.
+name_substr: extracted name or letter. starts_with_mode=true only for "starts with"/"begins with".
+has_profile_pic: true if "with pic/photo", false if "without/w/o/no pic", else null.
+sort_by: "name_length"=longest/shortest name, "username_length"=longest/shortest username, "name"=alphabetical, "created_at"=newest/oldest.
+sort_order: "desc"=longest/newest, "asc"=shortest/oldest/alphabetical.
+name_length_parity: "odd"|"even" for odd/even letter count, else null.
 
 Examples:
-Query: "female users named Taylor"
-Output: {"gender":"Female","name_substr":"Taylor","starts_with_mode":false,...}
-
-Query: "users with shortest names"
-Output: {"gender":null,"name_substr":null,"sort_by":"name_length","sort_order":"asc",...}
+"female users" -> {"gender":"Female","name_substr":null,...}
+"shortest name" -> {"gender":null,...,"sort_by":"name_length","sort_order":"asc"}
+"female users with longest name" -> {"gender":"Female",...,"sort_by":"name_length","sort_order":"desc"}
 """
+```
+
+**User Prompt:**
+
+The user prompt is minimal — the schema and rules are already in the system prompt, so repeating
+them per-request wastes tokens and increases latency.
+
+```python
+user_prompt = f'"{user_query}"\nJSON:'
 ```
 
 **AI Response Validation:**
@@ -844,8 +881,11 @@ Output: {"gender":null,"name_substr":null,"sort_by":"name_length","sort_order":"
 # ai/query_parser.py
 
 def _extract_json_from_response(response: str) -> str:
-    """Extract JSON from AI response, handling markdown and prefixes."""
+    """Extract JSON from AI response, handling markdown, prefixes, and think tags."""
     result = response.strip()
+
+    # Strip Qwen3 <think>...</think> blocks if present
+    result = re.sub(r"<think>[\s\S]*?</think>", "", result).strip()
 
     # Remove markdown code blocks
     if "```" in result:
@@ -864,28 +904,26 @@ def _extract_json_from_response(response: str) -> str:
         result = result[start_idx:end_idx + 1]
 
     return result
+```
 
-def _sanitize_ai_response(parsed_dict: dict) -> dict:
-    """Validate and sanitize all fields in parsed AI response."""
+**Gender Typo Pre-Processing:**
 
-    # Validate gender
-    if "gender" in parsed_dict:
-        gender = parsed_dict["gender"]
-        if isinstance(gender, str):
-            normalized = gender.strip().capitalize()
-            if normalized not in ["Male", "Female", "Other"]:
-                parsed_dict["gender"] = None
-            else:
-                parsed_dict["gender"] = normalized
+Common misspellings are corrected in code before reaching the AI, since a 1.7B model
+cannot reliably spell-check (e.g., it sees "male" inside "fmale"):
 
-    # Validate name_substr (filter out invalid values)
-    if "name_substr" in parsed_dict:
-        value = parsed_dict["name_substr"]
-        invalid = ["male", "female", "other", "user", "all", "null", ""]
-        if isinstance(value, str) and value.lower().strip() in invalid:
-            parsed_dict["name_substr"] = None
+```python
+# ai/query_parser.py
 
-    return parsed_dict
+_GENDER_TYPOS = {
+    "fmale": "female",
+    "femal": "female",
+    "femle": "female",
+    "feamle": "female",
+    "famale": "female",
+    "mael": "male",
+    "mlae": "male",
+    "maile": "male",
+}
 ```
 
 ### 7.3 Database Query Execution
@@ -1149,18 +1187,23 @@ Query: "users with odd number of letters in their name"
 | **Input Validation**           | Pydantic schemas + SQLAlchemy validators         | `schemas.py`, `models.py`  |
 | **File Upload Security**       | MIME type whitelist, size limits, UUID filenames | `utils/file_handlers.py`   |
 | **CORS Protection**            | Environment-specific origins                     | `main.py:90-114`           |
-| **Query Injection Prevention** | Newline removal in normalization                 | `ai/query_parser.py:64-65` |
+| **AI Response Sanitization**   | Strict JSON validation + field normalization     | `ai/query_parser.py`       |
+| **Input Pre-Processing**       | Gender typo correction before AI processing      | `ai/query_parser.py`       |
 
-**Example - Input Sanitization:**
+**Example - AI Response Sanitization:**
 
 ```python
-# ai/query_parser.py:64-65 - Prevent injection via newlines
-def normalize_query(query: str) -> str:
-    q = query.lower().strip()
-
-    # Security: Remove newlines to prevent injection
-    if '\n' in q:
-        q = q.split('\n')[0].strip()
+# ai/query_parser.py - Validate all AI output fields
+def _sanitize_ai_response(parsed_dict: dict) -> dict:
+    """Validate and sanitize all fields in parsed AI response."""
+    if "gender" in parsed_dict:
+        parsed_dict["gender"] = _validate_gender(parsed_dict["gender"])
+    if "name_substr" in parsed_dict:
+        parsed_dict["name_substr"] = _validate_name_substr(parsed_dict["name_substr"])
+    if "sort_by" in parsed_dict:
+        parsed_dict["sort_by"] = _validate_sort_by(parsed_dict["sort_by"])
+    # ... validates all 7 fields
+    return parsed_dict
 ```
 
 ---
@@ -1175,21 +1218,30 @@ def normalize_query(query: str) -> str:
 
 ### AI Optimizations
 
-1. **Model Warmup**: Pre-loads AI model at startup to avoid cold-start delays
-2. **Keep-Alive**: 10-minute keep-alive keeps model weights in memory
-3. **Persistent HTTP Client**: Saves ~100-200ms per AI request by reusing connections
+1. **Thinking Mode Disabled**: Uses native Ollama API with `think: false` to skip Qwen3's
+   chain-of-thought reasoning, reducing response times from ~40s to ~1-10s
+2. **Simplified Prompt**: Concise system prompt (~1,100 chars) optimized for 1.7B model attention
+3. **Minimal User Prompt**: Only sends the query + `JSON:` — schema is in the system prompt
+4. **Gender Typo Pre-Processing**: Deterministic code-level correction before AI, avoiding
+   unreliable spell-checking by the small model
+5. **Model Warmup**: Pre-loads AI model at startup to avoid cold-start delays
+6. **Keep-Alive**: 10-minute keep-alive keeps model weights in memory
+7. **Persistent HTTP Client**: Saves ~100-200ms per AI request by reusing connections
+8. **Native Ollama API**: Uses `/api/chat` instead of `/v1/chat/completions` for direct
+   control over generation parameters
 
 ### Response Time Expectations
 
-| Component         | Local Ollama    | Remote Ollama   |
+| Component         | Local Ollama    | Remote Ollama (think:false) |
 |-------------------|-----------------|-----------------|
-| AI Processing     | ~500-1500ms     | ~1000-3000ms    |
+| AI Processing     | ~500-1500ms     | ~1000-10000ms   |
 | Database Query    | ~50-100ms       | ~50-100ms       |
-| **Total**         | ~600-1600ms     | ~1000-3100ms    |
+| **Total**         | ~600-1600ms     | ~1000-10000ms   |
 
 **Note:** Response times depend heavily on:
 - Model size (smaller models like qwen3:1.7b are faster)
 - Network latency (for remote endpoints)
+- Whether `think: false` is properly applied (without it, expect ~30-45s per query)
 - Whether model is already loaded (first request may be slower)
 
 ---

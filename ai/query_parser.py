@@ -20,6 +20,18 @@ logger = logging.getLogger(__name__)
 # Constant for fallback message
 FALLBACK_EMPTY_FILTER_MSG = "Falling back to empty filter"
 
+# Common gender typos -> corrected word (applied before sending to AI)
+_GENDER_TYPOS = {
+    "fmale": "female",
+    "femal": "female",
+    "femle": "female",
+    "feamle": "female",
+    "famale": "female",
+    "mael": "male",
+    "mlae": "male",
+    "maile": "male",
+}
+
 
 # ==============================================================================
 # AI RESPONSE VALIDATION
@@ -164,30 +176,28 @@ def _sanitize_ai_response(parsed_dict: dict) -> dict:
 # SYSTEM PROMPT FOR AI
 # ==============================================================================
 
-SYSTEM_PROMPT = """Parse natural language to JSON. Output ONLY JSON, no text.
+SYSTEM_PROMPT = """Output ONLY valid JSON. No other text.
 
-SORT ORDER RULES (CRITICAL):
-- longest/newest = "desc"
-- shortest/oldest/alphabetical = "asc"
+Keys: gender, name_substr, starts_with_mode, name_length_parity, has_profile_pic, sort_by, sort_order
+Defaults: null for optional fields, false for starts_with_mode, "desc" for sort_order.
 
-GENDER: Male|Female|Other|null. ladies/women/gals=Female, guys/men/gentlemen=Male, non-binary=Other, fmale/femal=Female
-NAME: Extract name/letter to name_substr. starts_with_mode=true if "start(s) with"/"begins with"
-PROFILE: has_profile_pic=true if "with pic/photo", false if "without/w/o/no pic"
-SORT: name_length for longest/shortest name, username_length for username, name for alphabetical, created_at for newest/oldest
-PARITY: name_length_parity="odd"|"even" for odd/even letters
+gender: "Male"|"Female"|"Other"|null. ladies/women/gals=Female, guys/men/gentlemen=Male, non-binary=Other.
+name_substr: extracted name or letter. starts_with_mode=true only for "starts with"/"begins with".
+has_profile_pic: true if "with pic/photo/avatar", false if "without/w/o/no pic/avatar", else null.
+sort_by: "name_length"=longest/shortest name, "username_length"=longest/shortest username, "name"=alphabetical/sorted by name, "created_at"=newest/oldest.
+sort_order: "desc"=longest/newest/biggest, "asc"=shortest/oldest/alphabetical/sorted by name.
+name_length_parity: "odd"|"even" for odd/even letter count, else null.
 
 Examples:
 "female users" -> {"gender":"Female","name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":null,"sort_order":"desc"}
-"Adam" -> {"gender":null,"name_substr":"Adam","starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":null,"sort_order":"desc"}
 "starting with J" -> {"gender":null,"name_substr":"J","starts_with_mode":true,"name_length_parity":null,"has_profile_pic":null,"sort_by":null,"sort_order":"desc"}
-"longest username" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"username_length","sort_order":"desc"}
 "shortest name" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"name_length","sort_order":"asc"}
-"newest users" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"created_at","sort_order":"desc"}
+"longest username" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"username_length","sort_order":"desc"}
 "oldest users" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"created_at","sort_order":"asc"}
-"alphabetical" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"name","sort_order":"asc"}
+"sorted by name" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"name","sort_order":"asc"}
+"female users with longest name" -> {"gender":"Female","name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":null,"sort_by":"name_length","sort_order":"desc"}
 "w/ pics" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":true,"sort_by":null,"sort_order":"desc"}
-"w/o avatar" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":false,"sort_by":null,"sort_order":"desc"}
-"odd letters" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":"odd","has_profile_pic":null,"sort_by":null,"sort_order":"desc"}"""
+"w/o avatar" -> {"gender":null,"name_substr":null,"starts_with_mode":false,"name_length_parity":null,"has_profile_pic":false,"sort_by":null,"sort_order":"desc"}"""
 
 
 # ==============================================================================
@@ -214,22 +224,15 @@ async def parse_query_ai(user_query: str) -> UserQueryFilters:
         logger.warning("Empty query received")
         return UserQueryFilters()
 
+    # Fix common gender typos before sending to AI
+    words = user_query.split()
+    corrected_words = [_GENDER_TYPOS.get(w.lower(), w) for w in words]
+    user_query = " ".join(corrected_words)
+
     logger.info(f"Parsing query with AI: '{user_query}'")
 
     try:
-        user_prompt = f"""Parse this query into JSON:
-
-Query: "{user_query}"
-
-Output JSON with exactly seven keys:
-- "gender": "Male" | "Female" | "Other" | null
-- "name_substr": string | null
-- "starts_with_mode": true | false
-- "name_length_parity": "odd" | "even" | null
-- "has_profile_pic": true | false | null
-- "sort_by": "name_length" | "username_length" | "name" | "username" | "created_at" | null
-- "sort_order": "asc" | "desc"
-
+        user_prompt = f""""{user_query}"
 JSON:"""
 
         logger.info(f"Calling AI model: {OLLAMA_MODEL}")
