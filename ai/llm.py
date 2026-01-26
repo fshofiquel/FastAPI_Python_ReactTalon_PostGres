@@ -11,6 +11,7 @@ Performance Optimization:
 """
 
 import os
+import re
 import logging
 from typing import Optional
 
@@ -124,7 +125,7 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     if not OLLAMA_BASE_URL or not OLLAMA_API_KEY:
         raise RuntimeError("OLLAMA_BASE_URL and OLLAMA_API_KEY must be set in .env")
 
-    url = f"{OLLAMA_BASE_URL.rstrip('/')}/v1/chat/completions"
+    url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat"
     headers = {
         "Authorization": f"Bearer {OLLAMA_API_KEY}",
         "Content-Type": "application/json",
@@ -138,8 +139,12 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     payload = {
         "model": OLLAMA_MODEL,
         "messages": messages,
-        "temperature": 0.0,
-        "top_p": 0.95,
+        "stream": False,
+        "think": False,  # Disable Qwen3 chain-of-thought reasoning
+        "options": {
+            "temperature": 0.0,
+            "top_p": 0.95,
+        },
         "keep_alive": "10m",  # Keep model in memory to avoid reload latency
     }
 
@@ -147,7 +152,11 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     response = await client.post(url, headers=headers, json=payload)
     response.raise_for_status()
     data = response.json()
+    content = data["message"]["content"]
 
-    return data["choices"][0]["message"]["content"]
+    # Strip Qwen3 <think>...</think> blocks if model still emits them
+    content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+
+    return content
 
 

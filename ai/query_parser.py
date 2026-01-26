@@ -7,6 +7,7 @@ All queries are sent to the Ollama LLM for parsing into structured filters.
 
 import json
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -28,6 +29,9 @@ FALLBACK_EMPTY_FILTER_MSG = "Falling back to empty filter"
 def _extract_json_from_response(response: str) -> str:
     """Extract JSON object from AI response, handling markdown and prefixes."""
     result = response.strip()
+
+    # Strip Qwen3 <think>...</think> blocks if present
+    result = re.sub(r"<think>[\s\S]*?</think>", "", result).strip()
 
     # Remove markdown code blocks
     if "```" in result:
