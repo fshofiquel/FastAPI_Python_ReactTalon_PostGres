@@ -1,18 +1,28 @@
+# Directories
 /uploads/
-/.env
-/.output.txt
-/query_cache.json
-/test_ai_edge_cases.py
-/test_query_parser.py
-/test_ai_queries.py
 /venv/
 __pycache__/
-*.pyc
-.DS_Store
 .idea/
 .vscode/
 
-# JetBrains GitHub Copilot migration files
+# Environment & Configuration
+/.env
+/.env.local
+/.env.*.local
+
+# Cache & Temporary Files
+/.output.txt
+/query_cache.json
+*.pyc
+.DS_Store
+
+# Test Files (if temporary)
+/test_ai_edge_cases.py
+/test_query_parser.py
+/test_ai_queries.py
+
+# JetBrains IDE metadata (just in case individual files slip through)
 *.copilot.data.migration*
 copilot.data.migration.*
+.idea/*.xml
 
