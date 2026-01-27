@@ -15,6 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError  # Database constraint violation handling
 
 import models
 import schemas
@@ -80,6 +81,12 @@ async def create_user(
 
     except HTTPException:
         raise
+    except IntegrityError as exc:
+        logger.error(f"Database constraint violation when creating user '{username}': {exc}")
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists or a database constraint was violated. Please try with a different username."
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -105,7 +112,7 @@ def read_users(
     logger.info(f"Retrieved {len(users)} users (skip={skip}, limit={limit}, total={total})")
 
     return {
-        "users": [schemas.User.from_orm(user) for user in users],
+        "users": [schemas.User.model_validate(user) for user in users],
         "total": total,
         "skip": skip,
         "limit": limit,

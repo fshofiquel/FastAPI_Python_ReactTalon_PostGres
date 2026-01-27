@@ -19,6 +19,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
+def sanitize_ai_query(query: str, max_length: int = 500) -> str:
+    """
+    Sanitize AI query input for safety and efficiency.
+
+    Args:
+        query: Raw query string from user
+        max_length: Maximum allowed query length
+
+    Returns:
+        Sanitized query string
+
+    Raises:
+        HTTPException: If query fails validation
+    """
+    query = query.strip()
+
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    if len(query) > max_length:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query too long. Maximum {max_length} characters allowed."
+        )
+
+    # Check for suspicious patterns (multiple newlines or semicolons)
+    if query.count("\n") > 3 or query.count(";") > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Query contains suspicious patterns"
+        )
+
+    return query
+
+
 @router.post(
     "/test",
     summary="Test AI connection",
@@ -81,6 +116,9 @@ async def ai_search_users(
     Supports pagination with skip and limit parameters.
     """
     try:
+        # Sanitize query input
+        query = sanitize_ai_query(query)
+
         result = await filter_records_ai(
             db, query, batch_size=limit, skip=skip
         )

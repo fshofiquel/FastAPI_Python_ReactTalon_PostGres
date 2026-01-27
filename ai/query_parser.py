@@ -250,26 +250,38 @@ JSON:"""
 
         result = UserQueryFilters(**parsed_dict)
 
-        logger.info(f"AI parse successful: {result.dict()}")
+        logger.info(f"AI parse successful: {result.model_dump()}")
 
         return result
 
     except httpx.ReadTimeout as exc:
         logger.error(f"AI request timed out: {exc}")
         logger.warning(FALLBACK_EMPTY_FILTER_MSG)
-        return UserQueryFilters()
+        result = UserQueryFilters()
+        result.query_understood = False
+        result.parse_warnings.append("AI request timed out - showing all users")
+        return result
 
     except httpx.HTTPError as exc:
         logger.error(f"HTTP error calling AI: {exc}")
         logger.warning(FALLBACK_EMPTY_FILTER_MSG)
-        return UserQueryFilters()
+        result = UserQueryFilters()
+        result.query_understood = False
+        result.parse_warnings.append("AI service error - showing all users")
+        return result
 
     except json.JSONDecodeError as exc:
         logger.error(f"Invalid JSON from AI: {exc}")
         logger.warning(FALLBACK_EMPTY_FILTER_MSG)
-        return UserQueryFilters()
+        result = UserQueryFilters()
+        result.query_understood = False
+        result.parse_warnings.append("Could not parse AI response - showing all users")
+        return result
 
     except Exception as exc:
         logger.error(f"Unexpected error in AI parsing: {type(exc).__name__}: {exc}")
         logger.warning(FALLBACK_EMPTY_FILTER_MSG)
-        return UserQueryFilters()
+        result = UserQueryFilters()
+        result.query_understood = False
+        result.parse_warnings.append("Query parsing failed - showing all users")
+        return result

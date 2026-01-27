@@ -33,10 +33,10 @@ Configuration:
     Schemas use Pydantic configuration:
     - from_attributes = True: Allows automatic conversion from SQLAlchemy models
     - json_encoders: Custom serialization for datetime fields
-    - Uses v1-style @validator decorators (compatible with Pydantic v1 and v2)
+    - Uses Pydantic v2 @field_validator decorators
 """
 
-from pydantic import BaseModel, Field, validator  # Pydantic components (using v1 validator syntax)
+from pydantic import BaseModel, Field, field_validator  # Pydantic v2 components
 from typing import Optional  # Optional type hint
 from datetime import datetime  # Datetime handling
 import re  # Regular expressions for validation
@@ -55,14 +55,16 @@ class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Unique username")
     gender: str = Field(..., description="User gender: Male, Female, or Other")
 
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def validate_username(cls, v):
         """Validate username format"""
         if not re.match(r'^\w+$', v):
             raise ValueError('Username can only contain letters, numbers, and underscores')
         return v.strip()
 
-    @validator('gender')
+    @field_validator('gender')
+    @classmethod
     def validate_gender(cls, v):
         """Validate gender value"""
         valid_genders = ['Male', 'Female', 'Other']
@@ -70,7 +72,8 @@ class UserBase(BaseModel):
             raise ValueError(f'Gender must be one of: {", ".join(valid_genders)}')
         return v
 
-    @validator('full_name')
+    @field_validator('full_name')
+    @classmethod
     def validate_full_name(cls, v):
         """Validate and clean full name"""
         return v.strip()
@@ -83,7 +86,8 @@ class UserCreate(UserBase):
     """
     password: str = Field(..., min_length=8, description="User password (minimum 8 characters)")
 
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """
         Validate password strength.

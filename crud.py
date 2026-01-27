@@ -54,7 +54,7 @@ from sqlalchemy.orm import Session  # Database session type
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # Database exceptions
 from sqlalchemy import func  # SQL functions (lower, count)
 from passlib.context import CryptContext  # Password hashing
-from typing import List, Optional  # Type hints
+from typing import List, Optional, Tuple  # Type hints
 import models  # SQLAlchemy models
 import schemas  # Pydantic schemas
 import logging  # Application logging
@@ -123,7 +123,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def validate_password_strength(password: str) -> tuple[bool, str]:
+def validate_password_strength(password: str) -> Tuple[bool, str]:
     """
     Validate password meets minimum security requirements.
     
