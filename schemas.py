@@ -30,12 +30,13 @@ API Documentation:
     - min_length/max_length: Validation constraints
 
 Configuration:
-    Schemas use Pydantic v2 configuration:
+    Schemas use Pydantic configuration:
     - from_attributes = True: Allows automatic conversion from SQLAlchemy models
     - json_encoders: Custom serialization for datetime fields
+    - Uses v1-style @validator decorators (compatible with Pydantic v1 and v2)
 """
 
-from pydantic import BaseModel, Field, validator  # Pydantic v2 components
+from pydantic import BaseModel, Field, validator  # Pydantic components (using v1 validator syntax)
 from typing import Optional    # Optional type hint
 from datetime import datetime  # Datetime handling
 import re                      # Regular expressions for validation

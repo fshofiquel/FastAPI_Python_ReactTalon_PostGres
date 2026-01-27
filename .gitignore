@@ -5,3 +5,14 @@
 /test_ai_edge_cases.py
 /test_query_parser.py
 /test_ai_queries.py
+/venv/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+
+# JetBrains GitHub Copilot migration files
+*.copilot.data.migration*
+copilot.data.migration.*
+

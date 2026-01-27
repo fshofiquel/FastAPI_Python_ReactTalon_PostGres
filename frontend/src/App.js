@@ -42,7 +42,7 @@ import "./App.css";         // Tailwind CSS styles
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-// Use Set for O(1) lookup performance when checking file types (SonarQube S7776)
+// Use Set for O(1) lookup performance when checking file types (better than array includes())
 const ALLOWED_FILE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const USERS_PER_PAGE = 50;
 

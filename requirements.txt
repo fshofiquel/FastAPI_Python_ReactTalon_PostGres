@@ -22,7 +22,7 @@ python-magic-bin>=0.4.14
 httpx>=0.28.1
 requests>=2.32.5
 
-# Caching (Optional but recommended)
+# Caching (Optional - not currently used, reserved for future use)
 redis>=5.0.1
 
 # Configuration & Utilities

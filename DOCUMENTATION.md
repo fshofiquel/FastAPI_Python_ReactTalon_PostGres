@@ -47,7 +47,7 @@ This is an **AI-Powered User Management System** that allows administrators to m
 
 | Layer                | Technology                                |
 |----------------------|-------------------------------------------|
-| **Backend**          | FastAPI (Python 3.10+)                    |
+| **Backend**          | FastAPI (Python 3.14+)                    |
 | **Database**         | PostgreSQL with SQLAlchemy ORM            |
 | **AI Engine**        | Ollama LLM (local or remote)              |
 | **Frontend**         | React 19 with Tailwind CSS                |
@@ -95,7 +95,7 @@ This is an **AI-Powered User Management System** that allows administrators to m
 
 Ensure you have the following installed:
 
-- **Python 3.10+**
+- **Python 3.14+**
 - **PostgreSQL 13+**
 - **Node.js 18+** (for frontend)
 - **Ollama** (for AI features) - [https://ollama.ai](https://ollama.ai) or a remote Ollama endpoint
