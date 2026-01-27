@@ -32,13 +32,13 @@ Environment Variables Required:
         Defaults to "development" if not set.
 """
 
-import os       # Environment variable access
-import sys      # System exit on critical errors
+import os  # Environment variable access
+import sys  # System exit on critical errors
 import logging  # Application logging
 from sqlalchemy import create_engine, event, text  # Core SQLAlchemy components
 from sqlalchemy.ext.declarative import declarative_base  # ORM base class
 from sqlalchemy.orm import sessionmaker  # Session factory
-from sqlalchemy.pool import QueuePool    # Connection pool implementation
+from sqlalchemy.pool import QueuePool  # Connection pool implementation
 from dotenv import load_dotenv, find_dotenv  # Load .env file
 
 logger = logging.getLogger(__name__)
@@ -102,19 +102,19 @@ if ENVIRONMENT == "production":
     engine = create_engine(
         DATABASE_URL,
         poolclass=QueuePool,
-        pool_size=20,                    # Maximum persistent connections
-        max_overflow=10,                 # Maximum overflow connections
-        pool_timeout=30,                 # Seconds to wait before timing out
-        pool_recycle=3600,              # Recycle connections after 1 hour
-        pool_pre_ping=True,             # Test connections before using
-        echo=False,                      # Don't log SQL queries
+        pool_size=20,  # Maximum persistent connections
+        max_overflow=10,  # Maximum overflow connections
+        pool_timeout=30,  # Seconds to wait before timing out
+        pool_recycle=3600,  # Recycle connections after 1 hour
+        pool_pre_ping=True,  # Test connections before using
+        echo=False,  # Don't log SQL queries
         connect_args={
-            "connect_timeout": 10,       # Connection timeout in seconds
+            "connect_timeout": 10,  # Connection timeout in seconds
             "options": "-c statement_timeout=30000"  # 30 second query timeout
         }
     )
     logger.info("Production database engine initialized")
-    
+
 elif ENVIRONMENT == "testing":
     # Testing configuration with verbose logging
     engine = create_engine(
@@ -126,22 +126,23 @@ elif ENVIRONMENT == "testing":
         echo=True,  # Log all SQL for debugging
     )
     logger.info("Testing database engine initialized")
-    
+
 else:
     # Development with moderate pooling and SQL logging
     engine = create_engine(
         DATABASE_URL,
         poolclass=QueuePool,
-        pool_size=5,                     # Smaller pool for development
+        pool_size=5,  # Smaller pool for development
         max_overflow=5,
         pool_timeout=30,
-        pool_pre_ping=True,              # Catch stale connections
-        echo=True,                       # Log SQL queries for debugging
+        pool_pre_ping=True,  # Catch stale connections
+        echo=True,  # Log SQL queries for debugging
         connect_args={
             "connect_timeout": 10,
         }
     )
     logger.info("Development database engine initialized")
+
 
 # ==============================================================================
 # CONNECTION EVENT LISTENERS
@@ -152,15 +153,18 @@ def receive_connect(dbapi_conn, connection_record):
     """Log when new database connections are established"""
     logger.debug("New database connection established")
 
+
 @event.listens_for(engine, "checkout")
 def receive_checkout(dbapi_conn, connection_record, connection_proxy):
     """Log when connections are checked out from pool"""
     logger.debug("Connection checked out from pool")
 
+
 @event.listens_for(engine, "checkin")
 def receive_checkin(dbapi_conn, connection_record):
     """Log when connections are returned to pool"""
     logger.debug("Connection returned to pool")
+
 
 # ==============================================================================
 # SESSION CONFIGURATION
@@ -173,6 +177,7 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
 
 # ==============================================================================
 # DEPENDENCY INJECTION
@@ -204,6 +209,7 @@ def get_db():
         db.close()
         logger.debug("Session closed")
 
+
 # ==============================================================================
 # HEALTH CHECK
 # ==============================================================================
@@ -227,6 +233,7 @@ def check_database_health() -> bool:
         logger.error(f"Database health check failed: {e}")
         return False
 
+
 # ==============================================================================
 # POOL STATISTICS
 # ==============================================================================
@@ -246,6 +253,7 @@ def get_pool_stats() -> dict:
         "overflow": pool.overflow(),
         "total_connections": pool.size() + pool.overflow()
     }
+
 
 # ==============================================================================
 # STARTUP VALIDATION

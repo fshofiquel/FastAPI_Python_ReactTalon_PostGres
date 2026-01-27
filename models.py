@@ -34,10 +34,11 @@ Migration Notes:
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Index, event, CheckConstraint
-from sqlalchemy.sql import func      # SQL functions like NOW()
-from sqlalchemy.orm import validates # Validator decorator
-from database import Base            # SQLAlchemy declarative base
-import re                            # Regular expressions for validation
+from sqlalchemy.sql import func  # SQL functions like NOW()
+from sqlalchemy.orm import validates  # Validator decorator
+from database import Base  # SQLAlchemy declarative base
+import re  # Regular expressions for validation
+
 
 # ==============================================================================
 # USER MODEL
@@ -64,23 +65,23 @@ class User(Base):
         created_at (datetime): Timestamp when user was created
         updated_at (datetime): Timestamp when user was last updated
     """
-    
+
     __tablename__ = "users"
 
     # ==============================================================================
     # COLUMNS
     # ==============================================================================
-    
+
     # Primary key
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    
+
     # User information with length constraints
     full_name = Column(
         String(255),
         nullable=False,
         comment="User's full name"
     )
-    
+
     username = Column(
         String(50),
         unique=True,
@@ -88,25 +89,25 @@ class User(Base):
         index=True,
         comment="Unique username for login"
     )
-    
+
     password = Column(
         String(255),
         nullable=False,
         comment="Hashed password (Argon2)"
     )
-    
+
     gender = Column(
         String(20),
         nullable=False,
         comment="User gender: Male, Female, or Other"
     )
-    
+
     profile_pic = Column(
         String(500),
         nullable=True,
         comment="Path to profile picture file"
     )
-    
+
     # Timestamps - automatically managed
     created_at = Column(
         DateTime(timezone=True),
@@ -114,7 +115,7 @@ class User(Base):
         nullable=False,
         comment="Timestamp when user was created"
     )
-    
+
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -122,11 +123,11 @@ class User(Base):
         nullable=False,
         comment="Timestamp when user was last updated"
     )
-    
+
     # ==============================================================================
     # INDEXES AND CONSTRAINTS
     # ==============================================================================
-    
+
     __table_args__ = (
         # Indexes for query optimization
         Index('idx_user_username', 'username', unique=True),
@@ -134,18 +135,18 @@ class User(Base):
         Index('idx_user_fullname', 'full_name'),
         Index('idx_user_gender_name', 'gender', 'full_name'),  # Composite index for AI search
         Index('idx_user_created', 'created_at'),
-        
+
         # Check constraint for gender values
         CheckConstraint(
             "gender IN ('Male', 'Female', 'Other')",
             name='check_gender_valid'
         ),
     )
-    
+
     # ==============================================================================
     # VALIDATION
     # ==============================================================================
-    
+
     @validates('username')
     def validate_username(self, key, username):
         """
@@ -168,24 +169,24 @@ class User(Base):
         """
         if not username:
             raise ValueError("Username cannot be empty")
-        
+
         username = username.strip()
-        
+
         if len(username) < 3:
             raise ValueError("Username must be at least 3 characters long")
-        
+
         if len(username) > 50:
             raise ValueError("Username must be at most 50 characters long")
-        
+
         # Check for valid characters (alphanumeric + underscore only)
         if not re.match(r'^\w+$', username):
             raise ValueError(
                 "Username can only contain letters, numbers, and underscores. "
                 "No spaces or special characters allowed."
             )
-        
+
         return username
-    
+
     @validates('gender')
     def validate_gender(self, key, gender):
         """
@@ -202,20 +203,20 @@ class User(Base):
             ValueError: If gender is not one of the allowed values
         """
         valid_genders = ['Male', 'Female', 'Other']
-        
+
         if not gender:
             raise ValueError("Gender is required")
-        
+
         gender = gender.strip()
-        
+
         if gender not in valid_genders:
             raise ValueError(
                 f"Gender must be one of: {', '.join(valid_genders)}. "
                 f"Got: '{gender}'"
             )
-        
+
         return gender
-    
+
     @validates('full_name')
     def validate_full_name(self, key, full_name):
         """
@@ -233,17 +234,17 @@ class User(Base):
         """
         if not full_name:
             raise ValueError("Full name cannot be empty")
-        
+
         full_name = full_name.strip()
-        
+
         if len(full_name) < 2:
             raise ValueError("Full name must be at least 2 characters long")
-        
+
         if len(full_name) > 255:
             raise ValueError("Full name must be at most 255 characters long")
-        
+
         return full_name
-    
+
     @validates('password')
     def validate_password(self, key, password):
         """
@@ -264,20 +265,20 @@ class User(Base):
         """
         if not password:
             raise ValueError("Password hash cannot be empty")
-        
+
         return password
-    
+
     # ==============================================================================
     # METHODS
     # ==============================================================================
-    
+
     def __repr__(self):
         """String representation for debugging"""
         return (
             f"<User(id={self.id}, username='{self.username}', "
             f"gender='{self.gender}', created={self.created_at})>"
         )
-    
+
     def to_dict(self, include_timestamps=True):
         """
         Convert model to dictionary for JSON serialization.
@@ -295,12 +296,13 @@ class User(Base):
             "gender": self.gender,
             "profile_pic": self.profile_pic,
         }
-        
+
         if include_timestamps:
             data["created_at"] = self.created_at.isoformat() if self.created_at else None
             data["updated_at"] = self.updated_at.isoformat() if self.updated_at else None
-        
+
         return data
+
 
 # ==============================================================================
 # EVENT LISTENERS
@@ -314,6 +316,7 @@ def receive_before_update(mapper, connection, target):
     This ensures updated_at is always current even if onupdate doesn't trigger.
     """
     target.updated_at = func.now()
+
 
 @event.listens_for(User, 'before_insert')
 def receive_before_insert(mapper, connection, target):
@@ -329,11 +332,12 @@ def receive_before_insert(mapper, connection, target):
         target.full_name = target.full_name.strip()
     if target.username:
         target.username = target.username.strip()
-    
+
     # Optional: Convert username to lowercase for case-insensitive uniqueness
     # Uncomment if you want usernames to be case-insensitive
     # if target.username:
     #     target.username = target.username.lower()
+
 
 # ==============================================================================
 # HELPER COMMENT

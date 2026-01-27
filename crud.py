@@ -50,12 +50,12 @@ Error Handling:
     - All errors are logged with relevant context
 """
 
-from sqlalchemy.orm import Session                    # Database session type
+from sqlalchemy.orm import Session  # Database session type
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # Database exceptions
-from sqlalchemy import func                           # SQL functions (lower, count)
-from passlib.context import CryptContext              # Password hashing
-from typing import List, Optional                     # Type hints
-import models   # SQLAlchemy models
+from sqlalchemy import func  # SQL functions (lower, count)
+from passlib.context import CryptContext  # Password hashing
+from typing import List, Optional  # Type hints
+import models  # SQLAlchemy models
 import schemas  # Pydantic schemas
 import logging  # Application logging
 
@@ -79,6 +79,7 @@ pwd_context = CryptContext(
     schemes=["argon2"],  # Argon2 is the winner of the Password Hashing Competition
     deprecated="auto"
 )
+
 
 # ==============================================================================
 # PASSWORD FUNCTIONS
@@ -140,17 +141,18 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     """
     if len(password) < 8:
         return False, "Password must be at least 8 characters long"
-    
+
     if not any(c.isupper() for c in password):
         return False, "Password must contain at least one uppercase letter"
-    
+
     if not any(c.islower() for c in password):
         return False, "Password must contain at least one lowercase letter"
-    
+
     if not any(c.isdigit() for c in password):
         return False, "Password must contain at least one number"
-    
+
     return True, ""
+
 
 # ==============================================================================
 # USER LOOKUP FUNCTIONS
@@ -206,11 +208,12 @@ def username_exists(db: Session, username: str, exclude_id: Optional[int] = None
     query = db.query(models.User).filter(
         func.lower(models.User.username) == username.lower()
     )
-    
+
     if exclude_id is not None:
         query = query.filter(models.User.id != exclude_id)
-    
+
     return query.first() is not None
+
 
 # ==============================================================================
 # USER RETRIEVAL FUNCTIONS
@@ -232,10 +235,10 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[models.User]
 
 
 def get_users_by_gender(
-    db: Session, 
-    gender: str, 
-    skip: int = 0, 
-    limit: int = 100
+        db: Session,
+        gender: str,
+        skip: int = 0,
+        limit: int = 100
 ) -> List[models.User]:
     """
     Get all users of a specific gender.
@@ -259,10 +262,10 @@ def get_users_by_gender(
 
 
 def search_users_by_name(
-    db: Session, 
-    name_pattern: str, 
-    skip: int = 0, 
-    limit: int = 100
+        db: Session,
+        name_pattern: str,
+        skip: int = 0,
+        limit: int = 100
 ) -> List[models.User]:
     """
     Search users by name pattern (case-insensitive).
@@ -297,20 +300,21 @@ def get_user_count(db: Session, gender: Optional[str] = None) -> int:
         int: Total count of users
     """
     query = db.query(models.User)
-    
+
     if gender:
         query = query.filter(models.User.gender == gender)
-    
+
     return query.count()
+
 
 # ==============================================================================
 # USER CREATION
 # ==============================================================================
 
 def create_user(
-    db: Session, 
-    user: schemas.UserCreate, 
-    profile_pic: Optional[str] = None
+        db: Session,
+        user: schemas.UserCreate,
+        profile_pic: Optional[str] = None
 ) -> models.User:
     """
     Create a new user with proper error handling and validation.
@@ -331,16 +335,16 @@ def create_user(
         # Check if username already exists
         if username_exists(db, user.username):
             raise ValueError(f"Username '{user.username}' is already taken")
-        
+
         # Validate password strength (optional but recommended)
         # Uncomment if you want to enforce strong passwords
         # is_valid, error_msg = validate_password_strength(user.password)
         # if not is_valid:
         #     raise ValueError(error_msg)
-        
+
         # Hash password
         hashed_password = get_password_hash(user.password)
-        
+
         # Create user object
         db_user = models.User(
             full_name=user.full_name,
@@ -349,49 +353,50 @@ def create_user(
             gender=user.gender,
             profile_pic=profile_pic,
         )
-        
+
         # Add to database
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        
+
         logger.info(f"Created user: {db_user.username} (ID: {db_user.id})")
         return db_user
-        
+
     except ValueError:
         # Re-raise validation errors
         db.rollback()
         raise
-        
+
     except IntegrityError as e:
         db.rollback()
         logger.error(f"Integrity error creating user: {e}")
-        
+
         # Check if it's a username uniqueness error
         if "unique constraint" in str(e).lower() and "username" in str(e).lower():
             raise ValueError("Username already exists")
-        
+
         raise ValueError("Database constraint violation")
-        
+
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")
         raise RuntimeError(DATABASE_ERROR_MSG)
-        
+
     except Exception as e:
         db.rollback()
         logger.error(f"Unexpected error creating user: {e}")
         raise
+
 
 # ==============================================================================
 # USER UPDATE
 # ==============================================================================
 
 def update_user(
-    db: Session,
-    user_id: int,
-    user: schemas.UserCreate,
-    profile_pic: Optional[str] = None,
+        db: Session,
+        user_id: int,
+        user: schemas.UserCreate,
+        profile_pic: Optional[str] = None,
 ) -> Optional[models.User]:
     """
     Update an existing user with proper error handling.
@@ -415,21 +420,21 @@ def update_user(
         if not db_user:
             logger.warning(f"Update failed: User {user_id} not found")
             return None
-        
+
         # Check username uniqueness (excluding current user)
         if user.username != db_user.username:
             if username_exists(db, user.username, exclude_id=user_id):
                 raise ValueError(f"Username '{user.username}' is already taken")
-        
+
         # Update fields
         db_user.full_name = user.full_name
         db_user.username = user.username
         db_user.gender = user.gender
-        
+
         # Update profile picture if provided
         if profile_pic is not None:
             db_user.profile_pic = profile_pic
-        
+
         # Update password only if explicitly provided and not empty
         # This allows users to update profile without changing password
         if user.password is not None and user.password.strip():
@@ -437,39 +442,40 @@ def update_user(
             # is_valid, error_msg = validate_password_strength(user.password)
             # if not is_valid:
             #     raise ValueError(error_msg)
-            
+
             db_user.password = get_password_hash(user.password)
             logger.info(f"Password updated for user {user_id}")
-        
+
         # Commit changes
         db.commit()
         db.refresh(db_user)
-        
+
         logger.info(f"Updated user: {db_user.username} (ID: {db_user.id})")
         return db_user
-        
+
     except ValueError:
         db.rollback()
         raise
-        
+
     except IntegrityError as e:
         db.rollback()
         logger.error(f"Integrity error updating user {user_id}: {e}")
-        
+
         if "unique constraint" in str(e).lower() and "username" in str(e).lower():
             raise ValueError("Username already exists")
-        
+
         raise ValueError("Database constraint violation")
-        
+
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating user {user_id}: {e}")
         raise RuntimeError(DATABASE_ERROR_MSG)
-        
+
     except Exception as e:
         db.rollback()
         logger.error(f"Unexpected error updating user {user_id}: {e}")
         raise
+
 
 # ==============================================================================
 # USER DELETION
@@ -495,35 +501,36 @@ def delete_user(db: Session, user_id: int) -> Optional[models.User]:
         if not db_user:
             logger.warning(f"Delete failed: User {user_id} not found")
             return None
-        
+
         # Store user info for logging
         username = db_user.username
-        
+
         # Delete user
         db.delete(db_user)
         db.commit()
-        
+
         logger.info(f"Deleted user: {username} (ID: {user_id})")
         return db_user
-        
+
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting user {user_id}: {e}")
         raise RuntimeError(DATABASE_ERROR_MSG)
-        
+
     except Exception as e:
         db.rollback()
         logger.error(f"Unexpected error deleting user {user_id}: {e}")
         raise
+
 
 # ==============================================================================
 # AUTHENTICATION (for future use)
 # ==============================================================================
 
 def authenticate_user(
-    db: Session, 
-    username: str, 
-    password: str
+        db: Session,
+        username: str,
+        password: str
 ) -> Optional[models.User]:
     """
     Authenticate a user by username and password.
@@ -541,21 +548,22 @@ def authenticate_user(
     """
     # Get user by username
     user = get_user_by_username(db, username)
-    
+
     if not user:
         # Still verify a dummy password to prevent timing attacks
         # This ensures the response time is similar whether the user exists or not
         pwd_context.hash("dummy_password_that_will_never_match")
         logger.warning(f"Authentication failed: Username '{username}' not found")
         return None
-    
+
     # Verify password
     if not verify_password(password, user.password):
         logger.warning(f"Authentication failed: Invalid password for user '{username}'")
         return None
-    
+
     logger.info(f"User authenticated: {username}")
     return user
+
 
 # ==============================================================================
 # BULK OPERATIONS
@@ -584,15 +592,15 @@ def bulk_delete_users(db: Session, user_ids: List[int]) -> int:
             .delete(synchronize_session=False)
         )
         db.commit()
-        
+
         logger.info(f"Bulk deleted {deleted_count} users")
         return deleted_count
-        
+
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Error in bulk delete: {e}")
         raise RuntimeError("Database error occurred during bulk delete")
-        
+
     except Exception as e:
         db.rollback()
         logger.error(f"Unexpected error in bulk delete: {e}")

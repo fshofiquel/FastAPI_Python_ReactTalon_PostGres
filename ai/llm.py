@@ -158,5 +158,3 @@ async def chat_completion(user_input: str, system_prompt: Optional[str] = None) 
     content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
 
     return content
-
-

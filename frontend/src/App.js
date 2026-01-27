@@ -27,7 +27,7 @@
  *   - Avatar cache uses memoization for performance
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {useState, useEffect, useMemo, useCallback} from "react";
 import PropTypes from "prop-types";  // Runtime type checking for React props
 import axios from "axios";  // HTTP client for API requests
 import "./App.css";         // Tailwind CSS styles
@@ -109,12 +109,12 @@ function createEmptyFormData() {
 /**
  * Alert message component for errors and success notifications.
  */
-function AlertMessage({ type, message }) {
+function AlertMessage({type, message}) {
     const styles = {
         error: "bg-red-50 border-l-4 border-red-500 text-red-700",
         success: "bg-green-50 border-l-4 border-green-500 text-green-700"
     };
-    const icons = { error: "Warning", success: "Success" };
+    const icons = {error: "Warning", success: "Success"};
     const emoji = type === "error" ? "⚠️" : "✓";
 
     return (
@@ -133,7 +133,7 @@ AlertMessage.propTypes = {
 /**
  * Search info display showing filters, warnings, and result counts.
  */
-function SearchInfo({ searchInfo, usersPerPage }) {
+function SearchInfo({searchInfo, usersPerPage}) {
     if (searchInfo === null || searchInfo === undefined) return null;
 
     const userLabel = searchInfo.total === 1 ? 'user' : 'users';
@@ -149,8 +149,8 @@ function SearchInfo({ searchInfo, usersPerPage }) {
             {searchInfo.filters_applied && (
                 <div className="text-xs text-blue-600">
                     Filters: {Object.entries(searchInfo.filters_applied)
-                        .map(([key, val]) => `${key.replaceAll('_', ' ')}: ${val}`)
-                        .join(' | ')}
+                    .map(([key, val]) => `${key.replaceAll('_', ' ')}: ${val}`)
+                    .join(' | ')}
                 </div>
             )}
 
@@ -164,7 +164,8 @@ function SearchInfo({ searchInfo, usersPerPage }) {
 
             {searchInfo.query_understood === false && (
                 <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                    Your query couldn&apos;t be fully understood. Try: &quot;female users&quot;, &quot;users named John&quot;, &quot;users starting with A&quot;, or &quot;users with odd letters in name&quot;
+                    Your query couldn&apos;t be fully understood. Try: &quot;female users&quot;, &quot;users named
+                    John&quot;, &quot;users starting with A&quot;, or &quot;users with odd letters in name&quot;
                 </div>
             )}
         </div>
@@ -187,7 +188,7 @@ SearchInfo.propTypes = {
 /**
  * Gender badge component.
  */
-function GenderBadge({ gender }) {
+function GenderBadge({gender}) {
     const colorClass = GENDER_COLORS[gender] || GENDER_COLORS.Other;
     return (
         <span className={`px-3 py-1 rounded-full text-white text-sm ${colorClass}`}>
@@ -203,16 +204,16 @@ GenderBadge.propTypes = {
 /**
  * User table row component.
  */
-function UserRow({ user, avatarSrc, onEdit, onDelete }) {
+function UserRow({user, avatarSrc, onEdit, onDelete}) {
     return (
         <tr className="border-b hover:bg-gray-50">
             <td className="px-4 py-3">
-                <img src={avatarSrc} alt={user.full_name} className="w-12 h-12 rounded-full" />
+                <img src={avatarSrc} alt={user.full_name} className="w-12 h-12 rounded-full"/>
             </td>
             <td className="px-4 py-3 font-medium">{user.full_name}</td>
             <td className="px-4 py-3 text-gray-600">@{user.username}</td>
             <td className="px-4 py-3">
-                <GenderBadge gender={user.gender} />
+                <GenderBadge gender={user.gender}/>
             </td>
             <td className="px-4 py-3">
                 <div className="flex gap-2">
@@ -260,15 +261,15 @@ UserRow.propTypes = {
  * Also shows "Showing X to Y of Z users" info.
  */
 function PaginationControls({
-    currentPage,
-    totalPages,
-    totalUsers,
-    usersPerPage,
-    hasPrevPage,
-    hasNextPage,
-    isLoading,
-    onGoToPage
-}) {
+                                currentPage,
+                                totalPages,
+                                totalUsers,
+                                usersPerPage,
+                                hasPrevPage,
+                                hasNextPage,
+                                isLoading,
+                                onGoToPage
+                            }) {
     const startItem = ((currentPage - 1) * usersPerPage) + 1;
     const endItem = Math.min(currentPage * usersPerPage, totalUsers);
 
@@ -615,12 +616,12 @@ function App() {
 
             if (editingUser) {
                 await axios.put(`${API_URL}/users/${editingUser.id}`, data, {
-                    headers: { "Content-Type": "multipart/form-data" },
+                    headers: {"Content-Type": "multipart/form-data"},
                 });
                 setSuccess("User updated successfully!");
             } else {
                 await axios.post(`${API_URL}/users/`, data, {
-                    headers: { "Content-Type": "multipart/form-data" },
+                    headers: {"Content-Type": "multipart/form-data"},
                 });
                 setSuccess("User created successfully!");
             }
@@ -716,7 +717,7 @@ function App() {
             return;
         }
 
-        setFormData({ ...formData, profile_pic: file });
+        setFormData({...formData, profile_pic: file});
 
         const reader = new FileReader();
         reader.onloadend = () => setPreviewImage(reader.result);
@@ -778,7 +779,7 @@ function App() {
     const goToPage = (page) => {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.scrollTo({top: 0, behavior: 'smooth'});
         }
     };
 
@@ -800,8 +801,8 @@ function App() {
                 </div>
 
                 {/* Error/Success Messages */}
-                {error && <AlertMessage type="error" message={error} />}
-                {success && <AlertMessage type="success" message={success} />}
+                {error && <AlertMessage type="error" message={error}/>}
+                {success && <AlertMessage type="success" message={success}/>}
 
                 {/* Add User Button */}
                 {!showForm && (
@@ -826,7 +827,7 @@ function App() {
                                 type="text"
                                 placeholder="Full Name"
                                 value={formData.full_name}
-                                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                                onChange={(e) => setFormData({...formData, full_name: e.target.value})}
                                 required
                                 className="w-full px-4 py-2 border rounded-lg"
                             />
@@ -834,7 +835,7 @@ function App() {
                                 type="text"
                                 placeholder="Username"
                                 value={formData.username}
-                                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                onChange={(e) => setFormData({...formData, username: e.target.value})}
                                 required
                                 className="w-full px-4 py-2 border rounded-lg"
                             />
@@ -842,13 +843,13 @@ function App() {
                                 type="password"
                                 placeholder={editingUser ? "New Password (leave blank to keep)" : "Password"}
                                 value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                onChange={(e) => setFormData({...formData, password: e.target.value})}
                                 required={!editingUser}
                                 className="w-full px-4 py-2 border rounded-lg"
                             />
                             <select
                                 value={formData.gender}
-                                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                                onChange={(e) => setFormData({...formData, gender: e.target.value})}
                                 required
                                 className="w-full px-4 py-2 border rounded-lg"
                             >
@@ -865,7 +866,7 @@ function App() {
                                     className="w-full"
                                 />
                                 {previewImage && (
-                                    <img src={previewImage} alt="Preview" className="w-20 h-20 mt-2 rounded-full" />
+                                    <img src={previewImage} alt="Preview" className="w-20 h-20 mt-2 rounded-full"/>
                                 )}
                             </div>
                         </div>
@@ -930,14 +931,15 @@ function App() {
                             </div>
                         )}
                     </div>
-                    <SearchInfo searchInfo={searchInfo} usersPerPage={USERS_PER_PAGE} />
+                    <SearchInfo searchInfo={searchInfo} usersPerPage={USERS_PER_PAGE}/>
                 </div>
 
                 {/* Users Table */}
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <h2 className="text-2xl font-bold mb-4 text-gray-800">
                         {activeSearchQuery ? (
-                            <>Search Results <span className="text-base font-normal text-gray-500">for "{activeSearchQuery}"</span></>
+                            <>Search Results <span
+                                className="text-base font-normal text-gray-500">for "{activeSearchQuery}"</span></>
                         ) : (
                             <>Users</>
                         )}
@@ -949,7 +951,8 @@ function App() {
                     {/* Loading state - only show when loading AND no cached users */}
                     {isLoading && users.length === 0 && (
                         <div className="text-center py-8">
-                            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <div
+                                className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                             <p className="text-gray-600 mt-2">Loading...</p>
                         </div>
                     )}

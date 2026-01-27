@@ -37,9 +37,10 @@ Configuration:
 """
 
 from pydantic import BaseModel, Field, validator  # Pydantic components (using v1 validator syntax)
-from typing import Optional    # Optional type hint
+from typing import Optional  # Optional type hint
 from datetime import datetime  # Datetime handling
-import re                      # Regular expressions for validation
+import re  # Regular expressions for validation
+
 
 # ==============================================================================
 # USER SCHEMAS
@@ -53,14 +54,14 @@ class UserBase(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255, description="User's full name")
     username: str = Field(..., min_length=3, max_length=50, description="Unique username")
     gender: str = Field(..., description="User gender: Male, Female, or Other")
-    
+
     @validator('username')
     def validate_username(cls, v):
         """Validate username format"""
         if not re.match(r'^\w+$', v):
             raise ValueError('Username can only contain letters, numbers, and underscores')
         return v.strip()
-    
+
     @validator('gender')
     def validate_gender(cls, v):
         """Validate gender value"""
@@ -68,7 +69,7 @@ class UserBase(BaseModel):
         if v not in valid_genders:
             raise ValueError(f'Gender must be one of: {", ".join(valid_genders)}')
         return v
-    
+
     @validator('full_name')
     def validate_full_name(cls, v):
         """Validate and clean full name"""
@@ -81,7 +82,7 @@ class UserCreate(UserBase):
     Includes password field which is not in the base schema.
     """
     password: str = Field(..., min_length=8, description="User password (minimum 8 characters)")
-    
+
     @validator('password')
     def validate_password(cls, v):
         """
@@ -91,7 +92,7 @@ class UserCreate(UserBase):
         """
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
-        
+
         # Uncomment for stronger password requirements:
         # if not any(c.isupper() for c in v):
         #     raise ValueError('Password must contain at least one uppercase letter')
@@ -99,7 +100,7 @@ class UserCreate(UserBase):
         #     raise ValueError('Password must contain at least one lowercase letter')
         # if not any(c.isdigit() for c in v):
         #     raise ValueError('Password must contain at least one number')
-        
+
         return v
 
 
@@ -123,7 +124,7 @@ class User(UserBase):
     profile_pic: Optional[str] = Field(None, description="Path to profile picture file")
     created_at: Optional[datetime] = Field(None, description="Timestamp when user was created")
     updated_at: Optional[datetime] = Field(None, description="Timestamp when user was last updated")
-    
+
     class Config:
         """Pydantic configuration"""
         from_attributes = True  # Allows conversion from SQLAlchemy models

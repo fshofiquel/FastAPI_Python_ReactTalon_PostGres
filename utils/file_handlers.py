@@ -25,6 +25,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+
 # ==============================================================================
 # FILE VALIDATION HELPERS
 # ==============================================================================
@@ -44,8 +45,8 @@ def _check_file_size(content: bytes) -> None:
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413,
-            detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.1f}MB. "
-                   f"Your file is {file_size / (1024*1024):.1f}MB."
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024 * 1024):.1f}MB. "
+                   f"Your file is {file_size / (1024 * 1024):.1f}MB."
         )
     if file_size == 0:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
